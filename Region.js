@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const Utils = require('./Utils.js');
+const SanitizedStringSet = require('./SanitizedStringSet.js');
 
 let CachedLocationModule = null;
 function getLocationModule() {
@@ -843,7 +844,11 @@ class Region {
 
     let updated = false;
     for (const effect of normalized) {
-      const existingIndex = this.#statusEffects.findIndex(existing => existing.description.toLowerCase() === effect.description.toLowerCase());
+      const existingIndex = this.#statusEffects.findIndex(existing => {
+        if (SanitizedStringSet.namesMatch(existing.name, effect.name)) return true;
+        if (SanitizedStringSet.namesMatch(existing.description, effect.description)) return true;
+        return false;
+      });
       if (existingIndex >= 0) {
         this.#statusEffects[existingIndex] = effect;
       } else {

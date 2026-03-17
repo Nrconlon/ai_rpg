@@ -42,6 +42,19 @@ class SanitizedStringSet extends Set {
   keys() {
     return Array.from(this);
   }
+
+  /**
+   * Fuzzy name match: normalizes both strings (strip punctuation, collapse spaces, lowercase)
+   * then checks exact match or substring containment in either direction.
+   * Returns false if either value is falsy/non-string.
+   */
+  static namesMatch(a, b) {
+    if (!a || !b || typeof a !== 'string' || typeof b !== 'string') return false;
+    const na = SanitizedStringSet.#sanitizeValue(a);
+    const nb = SanitizedStringSet.#sanitizeValue(b);
+    if (!na || !nb) return false;
+    return na === nb || na.includes(nb) || nb.includes(na);
+  }
 }
 
 module.exports = SanitizedStringSet;
