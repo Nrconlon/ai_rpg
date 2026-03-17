@@ -2479,6 +2479,18 @@ function findActorByName(name) {
         }
     }
 
+    // Fallback: substring match to catch name variations (e.g. "Colette" vs "Madame Colette Verosa")
+    if (normalized.length >= 4) {
+        for (const actor of players.values()) {
+            if (actor && typeof actor.name === 'string') {
+                const actorName = actor.name.trim().toLowerCase();
+                if (actorName.includes(normalized) || normalized.includes(actorName)) {
+                    return actor;
+                }
+            }
+        }
+    }
+
     return null;
 }
 
@@ -18702,6 +18714,17 @@ app.post('/config', (req, res) => {
     }
 });
 
+// Linger mode runtime toggle (in-memory only, not persisted to config.yaml)
+app.get('/api/linger-mode', (req, res) => {
+    res.json({ enabled: !!config.linger_mode });
+});
+
+app.post('/api/linger-mode', (req, res) => {
+    const { enabled } = req.body || {};
+    config.linger_mode = !!enabled;
+    res.json({ success: true, enabled: config.linger_mode });
+});
+
 // Settings management page
 app.get('/settings', (req, res) => {
     res.render('settings.njk', {
@@ -18865,7 +18888,8 @@ const apiScope = {
     imageFileExists,
     realtimeHub,
     addJobSubscriber,
-    
+    generateImagePromptFromTemplate,
+
 };
 
 function defineApiStateProperty(name, getter, setter) {

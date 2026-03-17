@@ -25,6 +25,8 @@
                 <button class="tab-button" id="tab-character-tab" data-tab="character" role="tab" aria-selected="false" aria-controls="tab-character">Character</button>
                 <button class="tab-button" id="tab-quests-tab" data-tab="quests" role="tab" aria-selected="false" aria-controls="tab-quests">Quests</button>
                 <button class="tab-button" id="tab-party-tab" data-tab="party" role="tab" aria-selected="false" aria-controls="tab-party">Party</button>
+                <div class="tab-bar-spacer"></div>
+                <button class="tab-toggle" id="linger-mode-toggle" type="button" aria-pressed="false" title="Linger Mode: Focus on character development instead of advancing the plot">Linger</button>
             </div>
 
             <div class="tab-panels">
@@ -1487,6 +1489,7 @@
             initQuestPanel();
             initPlayerOverviewSync();
             initPartyDisplay();
+            initLingerModeToggle();
             await maybePromptSummaryStyle();
         });
 
@@ -13265,6 +13268,39 @@
                 activateTab(defaultTab);
                 window.location.hash = `#${hashPrefix}${defaultTab}`;
             }
+        }
+
+        function initLingerModeToggle() {
+            const toggle = document.getElementById('linger-mode-toggle');
+            if (!toggle) return;
+
+            // Fetch initial state
+            fetch('/api/linger-mode')
+                .then(r => r.json())
+                .then(data => {
+                    toggle.setAttribute('aria-pressed', data.enabled ? 'true' : 'false');
+                })
+                .catch(() => {});
+
+            toggle.addEventListener('click', async () => {
+                const currentlyOn = toggle.getAttribute('aria-pressed') === 'true';
+                const newState = !currentlyOn;
+                toggle.setAttribute('aria-pressed', newState ? 'true' : 'false');
+
+                try {
+                    const res = await fetch('/api/linger-mode', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ enabled: newState })
+                    });
+                    const data = await res.json();
+                    if (!data.success) {
+                        toggle.setAttribute('aria-pressed', currentlyOn ? 'true' : 'false');
+                    }
+                } catch {
+                    toggle.setAttribute('aria-pressed', currentlyOn ? 'true' : 'false');
+                }
+            });
         }
 
         function initLocationDisplay() {

@@ -18,9 +18,6 @@ mods/*
 mods/scene-illustrations/data/*
 imagegen/qwen_image_2512_nova.json
 imagegen/qwen_image_2512_nova.json.njk
-imagegen/sdxl_illustrious.json.njk
-imagegen/sdxl_illustrious.json.njk.bak
-.serena/
 # Lorebook state and data
 lorebooks/*.json
 lorebooks/lorebook-state.json

@@ -1,6 +1,69 @@
 class AIRPGChat {
+    static SCROLL_BOTTOM_THRESHOLD = 30;
+
     constructor() {
         this.chatLog = document.getElementById('chatLog');
+        this._userAtBottom = true;
+        this._rebuildInProgress = false;
+        this._scrollDebug = false;
+        this._scrollDebugLog = [];
+        this._scrollDebugMax = 50;
+        this._scrollDebugPanel = null;
+        this._scrollDebugSeq = 0;
+        if (this.chatLog) {
+            // wheel fires synchronously during user interaction — flag is set
+            // BEFORE any queued WebSocket handlers can call scrollToBottom()
+            this.chatLog.addEventListener('wheel', (e) => {
+                if (e.deltaY < 0) this._sdSetFlag(false, 'wheel-up');
+            }, { passive: true });
+
+            // Touch scrolling (mobile / touchpad)
+            let _lastTouchY = 0;
+            this.chatLog.addEventListener('touchstart', (e) => {
+                _lastTouchY = e.touches[0]?.clientY || 0;
+            }, { passive: true });
+            this.chatLog.addEventListener('touchmove', (e) => {
+                const y = e.touches[0]?.clientY || 0;
+                if (y > _lastTouchY) this._sdSetFlag(false, 'touch-up');
+                _lastTouchY = y;
+            }, { passive: true });
+
+            // Keyboard scrolling (if chatLog has focus)
+            this.chatLog.addEventListener('keydown', (e) => {
+                if (['ArrowUp', 'PageUp', 'Home'].includes(e.key)) {
+                    this._sdSetFlag(false, 'keyboard-up');
+                }
+            });
+
+            // Scroll event ONLY for detecting return-to-bottom.
+            // Safe direction: if this fires late, worst case is one
+            // skipped auto-scroll (harmless).
+            this.chatLog.addEventListener('scroll', () => {
+                if (this._rebuildInProgress) return;
+                const dist = this.chatLog.scrollHeight - this.chatLog.clientHeight - this.chatLog.scrollTop;
+                if (this._scrollDebug) {
+                    const oldFlag = this._userAtBottom;
+                    const willFlip = dist <= AIRPGChat.SCROLL_BOTTOM_THRESHOLD && !oldFlag;
+                    this._sdLog('SCROLL', {
+                        dist: Math.round(dist),
+                        scrollTop: Math.round(this.chatLog.scrollTop),
+                        scrollHeight: this.chatLog.scrollHeight,
+                        clientHeight: this.chatLog.clientHeight,
+                        flagChange: willFlip ? `false→true` : null
+                    });
+                }
+                if (dist <= AIRPGChat.SCROLL_BOTTOM_THRESHOLD) {
+                    this._sdSetFlag(true, 'scroll-listener');
+                }
+            });
+
+            document.addEventListener('keydown', (e) => {
+                if (e.ctrlKey && e.shiftKey && e.key === 'D') {
+                    e.preventDefault();
+                    this.toggleScrollDebug();
+                }
+            });
+        }
         this.messageInput = document.getElementById('messageInput');
         this.sendButton = document.getElementById('sendButton');
         this.sendButtonDefaultHtml = this.sendButton ? this.sendButton.innerHTML : 'Send';
@@ -708,6 +771,13 @@ class AIRPGChat {
         if (!this.chatLog) {
             return;
         }
+        if (this._scrollDebug) {
+            this._sdLog('RENDER', {
+                serverHistoryLen: this.serverHistory.length,
+                _userAtBottom: this._userAtBottom,
+                caller: this._sdCaller()
+            });
+        }
 
         const latestPlayerAction = this.getLatestPlayerActionEntry();
         this.latestPlayerActionEntryKey = this.getEntryKey(latestPlayerAction);
@@ -804,6 +874,25 @@ class AIRPGChat {
             }
         });
 
+        // ── Scroll anchor: snapshot before DOM rebuild ──
+        let anchorTimestamp = null;
+        let anchorViewportOffset = 0;
+        const wasAtBottom = this._userAtBottom;
+        if (!wasAtBottom) {
+            const messages = this.chatLog.querySelectorAll('[data-timestamp]');
+            for (const msg of messages) {
+                if (msg.offsetTop + msg.offsetHeight > this.chatLog.scrollTop) {
+                    anchorTimestamp = msg.dataset.timestamp;
+                    anchorViewportOffset = msg.offsetTop - this.chatLog.scrollTop;
+                    break;
+                }
+            }
+            if (this._scrollDebug) {
+                this._sdLog('ANCHOR-SAVE', { anchorTimestamp, anchorViewportOffset, wasAtBottom });
+            }
+        }
+        this._rebuildInProgress = true;
+
         this.chatLog.innerHTML = '';
         if (fragment.childNodes.length === 0) {
             const placeholder = document.createElement('div');
@@ -821,7 +910,24 @@ class AIRPGChat {
         if (existingPromptProgress) {
             this.chatLog.appendChild(existingPromptProgress);
         }
-        this.scrollToBottom();
+
+        // ── Scroll anchor: restore after DOM rebuild ──
+        if (!wasAtBottom && anchorTimestamp) {
+            const anchorEl = this.chatLog.querySelector(`[data-timestamp="${anchorTimestamp}"]`);
+            if (anchorEl) {
+                this.chatLog.scrollTop = anchorEl.offsetTop - anchorViewportOffset;
+            }
+            if (this._scrollDebug) {
+                this._sdLog('ANCHOR-RESTORE', {
+                    anchorTimestamp,
+                    found: !!anchorEl,
+                    newScrollTop: this.chatLog.scrollTop
+                });
+            }
+        } else {
+            this.scrollToBottom();
+        }
+        this._rebuildInProgress = false;
     }
 
     createChatMessageElement(entry, attachments = []) {
@@ -1378,6 +1484,32 @@ class AIRPGChat {
             wrapper.appendChild(redoButton);
         }
 
+        const copyButton = document.createElement('button');
+        copyButton.type = 'button';
+        copyButton.className = 'message-action message-action--copy';
+        copyButton.title = 'Copy message';
+        copyButton.setAttribute('aria-label', 'Copy message');
+        copyButton.textContent = '📋';
+        copyButton.addEventListener('click', async () => {
+            try {
+                await navigator.clipboard.writeText(entry.content || '');
+                copyButton.textContent = '✅';
+                setTimeout(() => { copyButton.textContent = '📋'; }, 1500);
+            } catch {
+                // Fallback for older browsers / non-HTTPS
+                const ta = document.createElement('textarea');
+                ta.value = entry.content || '';
+                ta.style.position = 'fixed';
+                ta.style.opacity = '0';
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                copyButton.textContent = '✅';
+                setTimeout(() => { copyButton.textContent = '📋'; }, 1500);
+            }
+        });
+
         const editButton = document.createElement('button');
         editButton.type = 'button';
         editButton.className = 'message-action message-action--edit';
@@ -1398,6 +1530,7 @@ class AIRPGChat {
             this.handleDeleteMessage(entry);
         });
 
+        wrapper.appendChild(copyButton);
         wrapper.appendChild(editButton);
         wrapper.appendChild(deleteButton);
         return wrapper;
@@ -2050,11 +2183,6 @@ class AIRPGChat {
         if (!Array.isArray(entries)) {
             return;
         }
-        const canScroll = Boolean(this.chatLog);
-        const isNearBottom = canScroll
-            ? (this.chatLog.scrollHeight - this.chatLog.clientHeight - this.chatLog.scrollTop) <= 4
-            : false;
-
         if (!entries.length) {
             if (this.promptProgressHideTimer) {
                 clearTimeout(this.promptProgressHideTimer);
@@ -2164,16 +2292,20 @@ class AIRPGChat {
             if (tsDiv) {
                 tsDiv.textContent = new Date().toISOString().replace('T', ' ').replace('Z', '');
             }
-            // Ensure the bubble stays at the bottom
+            // Ensure the bubble stays at the bottom.
+            // The remove+append triggers browser auto-scroll (overflow-anchor),
+            // which snaps the user to the bottom even when scrolled up.
+            // Fix: save and restore scrollTop when user is not at bottom.
+            const preserveScroll = !this._userAtBottom;
+            const savedTop = preserveScroll ? this.chatLog.scrollTop : 0;
             if (this.promptProgressMessage.parentNode === this.chatLog) {
                 this.chatLog.removeChild(this.promptProgressMessage);
             }
             this.chatLog.appendChild(this.promptProgressMessage);
+            if (preserveScroll) this.chatLog.scrollTop = savedTop;
         }
 
-        if (isNearBottom) {
-            this.scrollToBottom();
-        }
+        this.scrollToBottom();
     }
 
     async cancelPromptProgress(promptId, label, button, row) {
@@ -4539,9 +4671,148 @@ class AIRPGChat {
         }
     }
 
-    scrollToBottom() {
+    scrollToBottom(force = false) {
+        if (!this.chatLog) return;
+        if (this._scrollDebug) {
+            const blocked = !force && !this._userAtBottom;
+            this._sdLog('STB', {
+                force,
+                blocked,
+                _userAtBottom: this._userAtBottom,
+                caller: this._sdCaller()
+            });
+        }
+        if (!force && !this._userAtBottom) return;
         this.chatLog.scrollTop = this.chatLog.scrollHeight;
+        this._sdSetFlag(true, 'scrollToBottom-did-scroll');
     }
+
+    // ── Scroll Debug Logger ──────────────────────────────────────────
+
+    _sdLog(type, data) {
+        if (!this._scrollDebug) return;
+        this._scrollDebugSeq++;
+        const entry = {
+            seq: this._scrollDebugSeq,
+            ts: performance.now().toFixed(1),
+            type,
+            data
+        };
+        this._scrollDebugLog.push(entry);
+        if (this._scrollDebugLog.length > this._scrollDebugMax) {
+            this._scrollDebugLog.shift();
+        }
+        this._sdRenderPanel();
+    }
+
+    _sdSetFlag(value, cause) {
+        const old = this._userAtBottom;
+        this._userAtBottom = value;
+        if (this._scrollDebug && old !== value) {
+            this._sdLog('FLAG', { change: `${old}→${value}`, cause });
+        }
+    }
+
+    _sdCaller() {
+        try {
+            const stack = new Error().stack;
+            const lines = stack.split('\n');
+            // 0=Error, 1=_sdCaller, 2=scrollToBottom/renderChatHistory, 3=actual caller
+            const callerLine = lines[3] || '';
+            const match = callerLine.match(/at\s+(?:\w+\.)?(\w+)/);
+            return match ? match[1] : callerLine.trim().slice(0, 60);
+        } catch { return '?'; }
+    }
+
+    toggleScrollDebug() {
+        this._scrollDebug = !this._scrollDebug;
+        if (this._scrollDebug) {
+            this._scrollDebugLog = [];
+            this._scrollDebugSeq = 0;
+            this._sdCreatePanel();
+            console.log('[ScrollDebug] ON — Ctrl+Shift+D to toggle');
+        } else {
+            this._sdDestroyPanel();
+            console.log('[ScrollDebug] OFF');
+        }
+    }
+
+    _sdCreatePanel() {
+        if (this._scrollDebugPanel) return;
+        const panel = document.createElement('div');
+        panel.id = 'scroll-debug-panel';
+        panel.style.cssText = `
+            position: fixed; bottom: 10px; right: 10px; width: 420px; max-height: 340px;
+            background: #111; color: #0f0; font: 11px/1.4 monospace; z-index: 99999;
+            border: 1px solid #0f0; border-radius: 4px; display: flex; flex-direction: column;
+            pointer-events: auto;
+        `;
+        const header = document.createElement('div');
+        header.style.cssText = 'display:flex; justify-content:space-between; padding:4px 8px; border-bottom:1px solid #0f0; flex-shrink:0;';
+        header.innerHTML = '<span>Scroll Debug</span>';
+
+        const btns = document.createElement('span');
+        const clearBtn = document.createElement('button');
+        clearBtn.textContent = 'Clear';
+        clearBtn.style.cssText = 'background:none; border:1px solid #0f0; color:#0f0; cursor:pointer; margin-right:6px; font:11px monospace;';
+        clearBtn.onclick = () => { this._scrollDebugLog = []; this._scrollDebugSeq = 0; this._sdRenderPanel(); };
+
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = 'X';
+        closeBtn.style.cssText = 'background:none; border:1px solid #0f0; color:#0f0; cursor:pointer; font:11px monospace;';
+        closeBtn.onclick = () => this.toggleScrollDebug();
+
+        btns.append(clearBtn, closeBtn);
+        header.append(btns);
+
+        const body = document.createElement('div');
+        body.className = 'sd-body';
+        body.style.cssText = 'overflow-y:auto; padding:4px 8px; flex:1;';
+
+        panel.append(header, body);
+        document.body.appendChild(panel);
+        this._scrollDebugPanel = panel;
+    }
+
+    _sdDestroyPanel() {
+        if (this._scrollDebugPanel) {
+            this._scrollDebugPanel.remove();
+            this._scrollDebugPanel = null;
+        }
+    }
+
+    _sdRenderPanel() {
+        if (!this._scrollDebugPanel) return;
+        const body = this._scrollDebugPanel.querySelector('.sd-body');
+        if (!body) return;
+        const lines = this._scrollDebugLog.map(e => {
+            const d = e.data;
+            let detail = '';
+            let highlight = '';
+            switch (e.type) {
+                case 'FLAG':
+                    detail = `${d.change} cause=${d.cause}`;
+                    if (d.change.includes('false→true')) highlight = 'background:#550;';
+                    break;
+                case 'STB':
+                    detail = `force=${d.force} blocked=${d.blocked} flag=${d._userAtBottom} caller=${d.caller}`;
+                    break;
+                case 'SCROLL':
+                    detail = `dist=${d.dist} top=${d.scrollTop} sH=${d.scrollHeight} cH=${d.clientHeight}`;
+                    if (d.flagChange) { detail += ` FLIP:${d.flagChange}`; highlight = 'background:#550;'; }
+                    break;
+                case 'RENDER':
+                    detail = `histLen=${d.serverHistoryLen} flag=${d._userAtBottom} caller=${d.caller}`;
+                    highlight = 'background:#004;';
+                    break;
+            }
+            return `<div style="white-space:nowrap;${highlight}">#${e.seq} +${e.ts}ms [${e.type}] ${detail}</div>`;
+        });
+        body.innerHTML = lines.join('');
+        body.scrollTop = body.scrollHeight;
+    }
+
+    // ── End Scroll Debug Logger ──────────────────────────────────────
 
     processChatPayload(requestId, payload, { fromStream = false } = {}) {
         const context = requestId ? this.ensureRequestContext(requestId) : null;

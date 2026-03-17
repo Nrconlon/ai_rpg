@@ -2804,6 +2804,20 @@ module.exports = function registerApiRoutes(scope) {
                             });
                             shouldRefresh = true;
                             break;
+                        case 'npc_ability_change':
+                            entries.forEach(entry => {
+                                if (!entry) {
+                                    return;
+                                }
+                                const npcName = safeSummaryName(entry.name);
+                                const abilityName = safeSummaryItem(entry.abilityName || entry.ability, 'an ability');
+                                if (entry.action === 'update') {
+                                    add('🔄', `${npcName}'s ability **${abilityName}** evolved.`);
+                                } else {
+                                    add('⚡', `${npcName} demonstrated a new ability: **${abilityName}**.`);
+                                }
+                            });
+                            break;
                         case 'transfer_item':
                             entries.forEach(entry => {
                                 const giver = safeSummaryName(entry?.giver);
