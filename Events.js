@@ -82,7 +82,7 @@ const EVENT_PROMPT_ORDER = [
         },
         {
             key: "alter_item",
-            prompt: `Was an item or piece of scenery in the scene or any inventory PERMANENTLY altered in any way (e.g., upgraded, modified, enchanted, broken, filled with items, etc.)? If so, answer in the format "[exact item name] -> [new item name or same item name] -> [1 sentence description of alteration]". If multiple items were altered, separate multiple entries with vertical bars. If it doesn't make sense for the name to change, use the same name for new item name. Note that if a meaningful fraction of an an object was consumed (a slice of cake, but not a single piece of wood from a large pile), this is considered an alteration. If the *entire* thing was consumed, this is considered completely consumed and not alteration. Being given, taken, worn, equipped, removed, dropped, etc, is not considered an alteration.`,
+            prompt: `Was an item or piece of scenery in the scene or any inventory PERMANENTLY altered in any way (e.g., upgraded, modified, enchanted, broken, filled with items, etc.)? If so, answer in the format "[exact item name] -> [new item name or same item name] -> [1 sentence description of alteration]". If multiple items were altered, separate multiple entries with vertical bars. If it doesn't make sense for the name to change, use the same name for new item name. Note that if any portion of a consumable item was used (a dose, drop, sip, bite, or any fraction — e.g., a vial of syrup after taking a drop, a potion after drinking some), this is considered an alteration. If the *entire* thing was consumed, it is completely consumed and NOT an alteration. Being given, taken, worn, equipped, removed, dropped, etc, is not considered an alteration.`,
         },
         {
             key: "consume_item",
@@ -4246,6 +4246,22 @@ class Events {
                                         Location.get(ownerCandidate.currentLocation) || null;
                                 } catch (_) {
                                     locationCandidate = null;
+                                }
+                            }
+
+                            // Apply causeStatusEffectOnTarget if item has one (e.g., partial consumption of a potion/syrup)
+                            const targetEffect = thing.causeStatusEffectOnTarget || thing.metadata?.causeStatusEffectOnTarget || null;
+                            if (targetEffect) {
+                                const consumer = Globals.currentPlayer;
+                                if (consumer && typeof consumer.addStatusEffect === "function") {
+                                    try {
+                                        const applied = consumer.addStatusEffect(targetEffect, targetEffect.duration ?? 1);
+                                        if (applied) {
+                                            console.debug(`[alter_item] Applied status effect "${applied.name || applied.description || 'Unknown'}" to ${consumer.name || 'consumer'} from "${thing.name || originalName}".`);
+                                        }
+                                    } catch (error) {
+                                        console.warn(`[alter_item] Failed to apply status effect from "${thing.name || originalName}":`, error?.message || error);
+                                    }
                                 }
                             }
 
