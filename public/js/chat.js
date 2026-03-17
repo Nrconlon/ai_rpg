@@ -43,17 +43,20 @@ class AIRPGChat {
                 const dist = this.chatLog.scrollHeight - this.chatLog.clientHeight - this.chatLog.scrollTop;
                 if (this._scrollDebug) {
                     const oldFlag = this._userAtBottom;
-                    const willFlip = dist <= AIRPGChat.SCROLL_BOTTOM_THRESHOLD && !oldFlag;
+                    const atBottom = dist <= AIRPGChat.SCROLL_BOTTOM_THRESHOLD;
+                    const willFlip = atBottom ? (!oldFlag ? `false→true` : null) : (oldFlag ? `true→false` : null);
                     this._sdLog('SCROLL', {
                         dist: Math.round(dist),
                         scrollTop: Math.round(this.chatLog.scrollTop),
                         scrollHeight: this.chatLog.scrollHeight,
                         clientHeight: this.chatLog.clientHeight,
-                        flagChange: willFlip ? `false→true` : null
+                        flagChange: willFlip
                     });
                 }
                 if (dist <= AIRPGChat.SCROLL_BOTTOM_THRESHOLD) {
                     this._sdSetFlag(true, 'scroll-listener');
+                } else {
+                    this._sdSetFlag(false, 'scroll-listener');
                 }
             });
 

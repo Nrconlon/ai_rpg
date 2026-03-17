@@ -286,7 +286,7 @@ function splitOnArrow(raw, minParts) {
 
     // Fallback: if "->" didn't produce enough parts, try " - " (LLMs sometimes use plain dashes)
     if (minParts && parts.length < minParts) {
-        const fallbackParts = unescaped
+        const fallbackParts = raw
             .split(" - ")
             .map((part) => part.trim())
             .filter(Boolean);
@@ -4105,7 +4105,12 @@ class Events {
                     }
 
                     // Apply causeStatusEffectOnTarget before removing the item
-                    const targetEffect = item.causeStatusEffectOnTarget || item.metadata?.causeStatusEffectOnTarget || null;
+                    const targetEffect = item.causeStatusEffectOnTarget || item.metadata?.causeStatusEffectOnTarget || (() => {
+                        const legacy = item.causeStatusEffect;
+                        if (!legacy) return null;
+                        if (legacy.applyToEquipper && !legacy.applyToTarget) return null;
+                        return legacy;
+                    })() || null;
                     if (targetEffect) {
                         const consumerName = typeof entry === "object" && entry.user ? String(entry.user).trim() : null;
                         const consumer = (consumerName && typeof findActorByName === "function" ? findActorByName(consumerName) : null)
@@ -4250,7 +4255,12 @@ class Events {
                             }
 
                             // Apply causeStatusEffectOnTarget if item has one (e.g., partial consumption of a potion/syrup)
-                            const targetEffect = thing.causeStatusEffectOnTarget || thing.metadata?.causeStatusEffectOnTarget || null;
+                            const targetEffect = thing.causeStatusEffectOnTarget || thing.metadata?.causeStatusEffectOnTarget || (() => {
+                                const legacy = thing.causeStatusEffect;
+                                if (!legacy) return null;
+                                if (legacy.applyToEquipper && !legacy.applyToTarget) return null;
+                                return legacy;
+                            })() || null;
                             if (targetEffect) {
                                 const consumer = Globals.currentPlayer;
                                 if (consumer && typeof consumer.addStatusEffect === "function") {

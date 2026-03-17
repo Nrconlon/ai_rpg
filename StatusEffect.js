@@ -239,11 +239,15 @@ class StatusEffect {
             const durationText = textFromTag(node, 'duration');
             let duration = null;
             if (durationText !== null && durationText !== undefined && durationText.trim() !== '') {
-                const parsedDuration = Number(durationText);
-                if (!Number.isFinite(parsedDuration)) {
-                    throw new Error(`Status effect "${sourceDescription}" duration is invalid`);
+                if (durationText.trim().toLowerCase() === 'permanent') {
+                    duration = null;
+                } else {
+                    const parsedDuration = Number(durationText);
+                    if (!Number.isFinite(parsedDuration)) {
+                        throw new Error(`Status effect "${sourceDescription}" duration is invalid`);
+                    }
+                    duration = Math.max(0, Math.floor(parsedDuration));
                 }
-                duration = Math.max(0, Math.floor(parsedDuration));
             }
 
             const attributes = Array.from(node.getElementsByTagName('attribute'))
