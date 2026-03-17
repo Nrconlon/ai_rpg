@@ -8715,7 +8715,8 @@ module.exports = function registerApiRoutes(scope) {
                             if (currentPlayer && 'lastOutcomeSucceeded' in currentPlayer) {
                                 const wasSuccessful = Boolean(currentPlayer.lastOutcomeSucceeded);
                                 const isTrivial = plausibilityType === 'trivial';
-                                if (wasSuccessful || isTrivial) {
+                                const isPlausible = plausibilityType === 'plausible';
+                                if (wasSuccessful || isTrivial || isPlausible) {
                                     const historyEntry = findMostRecentHistoryEntryWithRequestId(newChatEntries, stream.requestId);
                                     if (historyEntry && typeof historyEntry.content === 'string' && historyEntry.content.trim()) {
                                         userInput = historyEntry.content.trim();

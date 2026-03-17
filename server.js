@@ -14854,6 +14854,29 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                 attributes[attrName] = mapNpcRatingToValue(rating);
             }
 
+            // Live dedup check: if an NPC with this name already exists, move them here instead of creating a duplicate
+            const existingActor = findActorByName(npcData.name);
+            if (existingActor) {
+                const oldLocationId = typeof existingActor.currentLocation === 'string' ? existingActor.currentLocation : null;
+                if (oldLocationId && oldLocationId !== location.id) {
+                    try {
+                        const oldLocation = gameLocations.get(oldLocationId) || Location.get(oldLocationId);
+                        if (oldLocation && typeof oldLocation.removeNpcId === 'function') {
+                            oldLocation.removeNpcId(existingActor.id);
+                        }
+                    } catch (_) { /* old location may not exist */ }
+                }
+                if (typeof existingActor.setLocation === 'function') {
+                    existingActor.setLocation(location.id);
+                }
+                if (typeof location.addNpcId === 'function') {
+                    location.addNpcId(existingActor.id);
+                }
+                created.push(existingActor);
+                console.log(`🔗 NPC "${npcData.name}" already exists (${existingActor.id}) — moved to location ${location.id} instead of creating duplicate.`);
+                continue;
+            }
+
             const npc = new Player({
                 name: npcData.name || 'Unnamed NPC',
                 description: npcData.description || '',
@@ -15205,6 +15228,34 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
             }
             if (!targetLocation && regionLocations.length > 0) {
                 targetLocation = regionLocations[0];
+            }
+
+            // Live dedup check: if an NPC with this name already exists, move them here instead of creating a duplicate
+            const existingActor = findActorByName(npcData.name);
+            if (existingActor) {
+                const oldLocationId = typeof existingActor.currentLocation === 'string' ? existingActor.currentLocation : null;
+                if (targetLocation && oldLocationId !== targetLocation.id) {
+                    if (oldLocationId) {
+                        try {
+                            const oldLocation = gameLocations.get(oldLocationId) || Location.get(oldLocationId);
+                            if (oldLocation && typeof oldLocation.removeNpcId === 'function') {
+                                oldLocation.removeNpcId(existingActor.id);
+                            }
+                        } catch (_) { /* old location may not exist */ }
+                    }
+                    if (typeof existingActor.setLocation === 'function') {
+                        existingActor.setLocation(targetLocation.id);
+                    }
+                    if (typeof targetLocation.addNpcId === 'function') {
+                        targetLocation.addNpcId(existingActor.id);
+                    }
+                }
+                existingActor.originRegionId = region.id;
+                existingActor.isRegionImportant = true;
+                region.npcIds.push(existingActor.id);
+                created.push(existingActor);
+                console.log(`🔗 Region NPC "${npcData.name}" already exists (${existingActor.id}) — moved to region ${region.id} instead of creating duplicate.`);
+                continue;
             }
 
             const npc = new Player({
