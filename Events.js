@@ -157,6 +157,10 @@ const EVENT_PROMPT_ORDER = [
             prompt: `List all entities (NPCs, animals, monsters, robots, etc.) that the player interacted with in textToCheck which aren't already listed in your answers above, in the player's party, or in the location's context. Separate entries with vertical bars. For instance, "Android 609|Bob|Dire Wolf". If none, answer N/A.`,
         },
         {
+            key: "npc_scene_presence",
+            prompt: `Which named animate entities (NPCs, creatures, etc.) are physically present at this location during textToCheck? List all of them, whether or not they appear in the NPC context above. Use their exact names, separated by vertical bars. Do not include the player. Do not include entities merely mentioned in dialogue or thought — only those physically in the scene. If none, answer N/A.`,
+        },
+        {
             key: "party_change",
             prompt: `Is any entity (including ones you may have listed above) that is not listed in playerParty currently leading, following, or otherwise willingly accompanying the player? If yes, list "[npc name] -> joined". For anyone who began leading or following (even temporarily), also list them as "[npc name] -> joined". If anyone left the party, list "[npc name] -> left". Separate multiple entries with vertical bars. If no party status occurred, respond with N/A.`,
         },
@@ -2078,13 +2082,46 @@ class Events {
 
                 // Check if the NPC already exists and is in this location (see Player.js and Location.js)
                 // so we can avoid redundant arrivals
-                const existingNames = Globals.location.getNPCNames();
+                const existingNames = Globals.location?.getNPCNames?.() || [];
                 const uniqueArrivals = arrivals.filter(
                     (entry) => !existingNames.includes(entry.name),
                 );
 
                 parsedEntries.npc_arrival_departure.push(...uniqueArrivals);
             }
+        }
+
+        // Fold scene-presence into arrivals for existing NPCs not already at the location.
+        // This catches NPCs depicted as "already here" in the narrative who aren't tracked
+        // at this location in the game state (e.g. after a location transition).
+        const scenePresence = parsedEntries.npc_scene_presence || [];
+        if (scenePresence.length) {
+            const presenceArrivals = scenePresence
+                .map((name) => normalizeString(name))
+                .filter((name) => name.length > 0)
+                .map((name) => ({
+                    name,
+                    action: "arrived",
+                    destination: null,
+                    scenePresence: true,
+                }));
+
+            if (!Array.isArray(parsedEntries.npc_arrival_departure)) {
+                parsedEntries.npc_arrival_departure = [];
+            }
+
+            const locationNames = Globals.location?.getNPCNames?.() || [];
+            const existingArrivalNames = SanitizedStringSet.fromArray(
+                parsedEntries.npc_arrival_departure.map((e) => e?.name || ""),
+            );
+
+            const uniquePresence = presenceArrivals.filter(
+                (entry) =>
+                    !locationNames.includes(entry.name) &&
+                    !existingArrivalNames.has(entry.name),
+            );
+
+            parsedEntries.npc_arrival_departure.push(...uniquePresence);
         }
 
         this._trackItemsFromParsing(parsedEntries);
@@ -2678,6 +2715,15 @@ class Events {
                     })
                     .filter(Boolean),
             npc_first_appearance: (raw) =>
+                splitPipeList(raw)
+                    .map((entry) => {
+                        if (typeof entry !== "string") return "";
+                        const arrowIndex = entry.indexOf("->");
+                        const sliced = arrowIndex >= 0 ? entry.slice(0, arrowIndex) : entry;
+                        return sliced.trim();
+                    })
+                    .filter(Boolean),
+            npc_scene_presence: (raw) =>
                 splitPipeList(raw)
                     .map((entry) => {
                         if (typeof entry !== "string") return "";
@@ -4486,7 +4532,7 @@ class Events {
                         attributeBonuses: Array.isArray(template?.attributeBonuses)
                             ? template.attributeBonuses
                             : null,
-                        causeStatusEffect: template?.causeStatusEffect ?? null,
+                        causeStatusEffect: Thing.resolveCauseStatusEffect(template),
                         level: template?.level ?? null,
                         relativeLevel: template?.relativeLevel ?? null,
                     });
@@ -5074,17 +5120,33 @@ class Events {
                     }
 
                     let finalizedName = originalName;
+                    const isScenePresence = Boolean(entry?.scenePresence);
                     if (action === "arrived" || isFirstAppearance) {
-                        try {
-                            const ensuredNpc = await ensureNpcByName(originalName, context);
-                            if (ensuredNpc && typeof ensuredNpc.name === "string") {
-                                const trimmed = ensuredNpc.name.trim();
+                        if (isScenePresence) {
+                            // Scene-presence entries only move existing NPCs — never create new ones.
+                            const existing = findActorByName?.(originalName);
+                            if (existing && typeof existing.name === "string") {
+                                const trimmed = existing.name.trim();
                                 if (trimmed) {
                                     finalizedName = trimmed;
                                 }
+                            } else {
+                                // NPC doesn't exist; skip this entry entirely.
+                                suppressedIndexes.add(index);
+                                continue;
                             }
-                        } catch (error) {
-                            console.warn("Failed to ensure NPC arrival:", error.message);
+                        } else {
+                            try {
+                                const ensuredNpc = await ensureNpcByName(originalName, context);
+                                if (ensuredNpc && typeof ensuredNpc.name === "string") {
+                                    const trimmed = ensuredNpc.name.trim();
+                                    if (trimmed) {
+                                        finalizedName = trimmed;
+                                    }
+                                }
+                            } catch (error) {
+                                console.warn("Failed to ensure NPC arrival:", error.message);
+                            }
                         }
                     }
 
@@ -5679,7 +5741,6 @@ class Events {
                     moveDebug(`[move_location handler] Skipped: "${destinationName}" already in movedLocations`);
                     return;
                 }
-                Events.movedLocations.add(destinationName);
                 moveDebug(`[move_location handler] Moving to "${destinationName}"`);
                 try {
                     await movePlayerToDestination(this, destinationName, context, {

@@ -460,6 +460,16 @@ class Thing {
     return fallback ? fallback.key : 'common';
   }
 
+  static resolveCauseStatusEffect(source) {
+    if (!source) return null;
+    const entries = [];
+    const onTarget = source.causeStatusEffectOnTarget;
+    const onEquipper = source.causeStatusEffectOnEquipper;
+    if (onTarget) entries.push({ ...onTarget, applyToTarget: true });
+    if (onEquipper) entries.push({ ...onEquipper, applyToEquipper: true });
+    return entries.length ? entries : (source.causeStatusEffect ?? null);
+  }
+
   static getDefaultRarityLabel() {
     const definition = this.getRarityDefinition(this.getDefaultRarityKey(), { fallbackToDefault: true });
     return definition?.label || 'Common';

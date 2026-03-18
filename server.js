@@ -7817,7 +7817,7 @@ async function alterThingByPrompt({
         isSalvageable: itemForPrompt.isSalvageable ? 'true' : 'false',
         properties: itemForPrompt.properties,
         attributeBonuses: itemForPrompt.attributeBonuses,
-        causeStatusEffect: itemForPrompt.causeStatusEffect
+        causeStatusEffect: Thing.resolveCauseStatusEffect(itemForPrompt)
     };
 
     const rarityDefinitionForSeed = Thing.getRarityDefinition(thingSeed.rarity, { fallbackToDefault: true });
@@ -13190,7 +13190,7 @@ async function generateLocationThingsForLocation({ location } = {}) {
             itemTypeDetail: itemData.type || null,
             slot: itemData.slot || null,
             attributeBonuses: thingType === 'item' ? scaledAttributeBonuses : [],
-            causeStatusEffect: itemData.causeStatusEffect,
+            causeStatusEffect: Thing.resolveCauseStatusEffect(itemData),
             level: computedLevel,
             relativeLevel,
             metadata: cleanedMetadata,
