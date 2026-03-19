@@ -274,7 +274,7 @@ function splitPipeList(raw) {
         .split("|")
         .map((part) => part.trim())
         .filter(
-            (part) => part.length > 0 && !NO_EVENT_TOKENS.has(part.toLowerCase()),
+            (part) => part.length > 0 && !NO_EVENT_TOKENS.has(part.toLowerCase().replace(/[.!?]+$/, '')),
         );
 }
 
@@ -2023,7 +2023,7 @@ class Events {
                 .map((segment) => (typeof segment === "string" ? segment.trim() : ""))
                 .filter(
                     (segment) =>
-                        segment.length > 0 && !NO_EVENT_TOKENS.has(segment.toLowerCase()),
+                        segment.length > 0 && !NO_EVENT_TOKENS.has(segment.toLowerCase().replace(/[.!?]+$/, '')),
                 )
                 .join(" | ");
             rawEntries[key] = compactRaw;
@@ -2110,7 +2110,8 @@ class Events {
                 parsedEntries.npc_arrival_departure = [];
             }
 
-            const locationNames = Globals.location?.getNPCNames?.() || [];
+            const isMoving = (parsedEntries.move_new_location?.length > 0) || (parsedEntries.move_location?.length > 0);
+            const locationNames = isMoving ? [] : (Globals.location?.getNPCNames?.() || []);
             const existingArrivalNames = SanitizedStringSet.fromArray(
                 parsedEntries.npc_arrival_departure.map((e) => e?.name || ""),
             );
@@ -2120,6 +2121,10 @@ class Events {
                     !locationNames.includes(entry.name) &&
                     !existingArrivalNames.has(entry.name),
             );
+
+            if (isMoving && uniquePresence.length) {
+                console.log(`[scene_presence] Folding ${uniquePresence.length} NPC(s) as arrivals during move: ${uniquePresence.map(e => e.name).join(', ')}`);
+            }
 
             parsedEntries.npc_arrival_departure.push(...uniquePresence);
         }

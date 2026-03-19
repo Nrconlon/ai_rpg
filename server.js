@@ -2650,6 +2650,10 @@ function tickStatusEffectsForAction({ player = currentPlayer, location = null } 
         return { location: null, region: null };
     }
 
+    if (config.linger_mode) {
+        return { location: null, region: null };
+    }
+
     let resolvedLocation = location;
     if (!resolvedLocation && player.currentLocation) {
         try {

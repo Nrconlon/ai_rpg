@@ -6872,7 +6872,7 @@ module.exports = function registerApiRoutes(scope) {
                     validateXML: false,
                 };
                 if (Globals.config.repetition_buster) {
-                    requestOptions.requiredRegex = /<finalProse>[\s\S]*\S[\s\S]*<\/finalProse>/i;
+                    messages.push({ role: 'assistant', content: '1.' });
                 }
 
                 if (typeof parsedTemplate.temperature === 'number') {
@@ -6893,9 +6893,36 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 if (Globals.config.repetition_buster) {
-                    const finalProseMatch = raw.match(/<finalProse>([\s\S]*?)<\/finalProse>/i);
+                    let finalProseMatch = raw.match(/<finalProse>([\s\S]*?)<\/finalProse>/i);
+                    if (!finalProseMatch || !finalProseMatch[1]) {
+                        // Tags missing — retry once (usually works on 2nd attempt)
+                        console.warn('Missing <finalProse> tags, retrying once...');
+                        try {
+                            const retryResponse = await LLMClient.chatCompletion(requestOptions);
+                            if (typeof retryResponse === 'string' && retryResponse.trim()) {
+                                raw = retryResponse;
+                                finalProseMatch = raw.match(/<finalProse>([\s\S]*?)<\/finalProse>/i);
+                            }
+                        } catch (retryErr) {
+                            console.warn('Retry failed:', retryErr.message);
+                        }
+                    }
                     if (finalProseMatch && finalProseMatch[1]) {
                         raw = finalProseMatch[1].trim();
+                    } else {
+                        // Fallback: extract the last prose-like section from numbered steps
+                        console.warn('Using fallback prose extraction (no <finalProse> tags after retry)');
+                        const sections = raw.split(/(?=^\d+\.\s)/m).filter(s => s.trim());
+                        for (let i = sections.length - 1; i >= 0; i--) {
+                            const content = sections[i].replace(/^\d+\.\s*\n?/, '').trim();
+                            if (!content) continue;
+                            const bulletLines = (content.match(/^[\s]*[-*•]\s|^\*\*[^*]+\*\*:/gm) || []).length;
+                            const totalLines = content.split('\n').filter(l => l.trim()).length;
+                            if (bulletLines <= totalLines * 0.4) {
+                                raw = content;
+                                break;
+                            }
+                        }
                     }
                 }
 
@@ -7473,6 +7500,9 @@ module.exports = function registerApiRoutes(scope) {
             catch (error) {
                 console.warn('Error during initial player location retrieval:', error.message);
                 console.debug(error);
+                return res.status(500).json({ error: 'Failed to retrieve player location. You need to start or load a game first.' });
+            }
+            if (!initialPlayerLocationId || !initialPlayerLocationName) {
                 return res.status(500).json({ error: 'Failed to retrieve player location. You need to start or load a game first.' });
             }
 
@@ -8530,7 +8560,7 @@ module.exports = function registerApiRoutes(scope) {
                     validateXML: false
                 };
                 if (promptType === 'player-action' && Globals.config.repetition_buster) {
-                    requestOptions.requiredRegex = /<finalProse>[\s\S]*\S[\s\S]*<\/finalProse>/i;
+                    finalMessages.push({ role: 'assistant', content: '1.' });
                 }
 
                 if (Object.keys(additionalPayload).length) {
@@ -8574,9 +8604,36 @@ module.exports = function registerApiRoutes(scope) {
 
                     if (promptType === 'player-action' && Globals.config.repetition_buster) {
                         // extract final prose from numbered list
-                        const finalProseMatch = aiResponse.match(/<finalProse>([\s\S]*?)<\/finalProse>/i);
+                        let finalProseMatch = aiResponse.match(/<finalProse>([\s\S]*?)<\/finalProse>/i);
+                        if (!finalProseMatch || !finalProseMatch[1]) {
+                            // Tags missing — retry once (usually works on 2nd attempt)
+                            console.warn('Missing <finalProse> tags, retrying once...');
+                            try {
+                                const retryResponse = await LLMClient.chatCompletion(requestOptions);
+                                if (typeof retryResponse === 'string' && retryResponse.trim()) {
+                                    aiResponse = retryResponse;
+                                    finalProseMatch = aiResponse.match(/<finalProse>([\s\S]*?)<\/finalProse>/i);
+                                }
+                            } catch (retryErr) {
+                                console.warn('Retry failed:', retryErr.message);
+                            }
+                        }
                         if (finalProseMatch && finalProseMatch[1]) {
                             aiResponse = finalProseMatch[1].trim();
+                        } else {
+                            // Fallback: extract the last prose-like section from numbered steps
+                            console.warn('Using fallback prose extraction (no <finalProse> tags after retry)');
+                            const sections = aiResponse.split(/(?=^\d+\.\s)/m).filter(s => s.trim());
+                            for (let i = sections.length - 1; i >= 0; i--) {
+                                const content = sections[i].replace(/^\d+\.\s*\n?/, '').trim();
+                                if (!content) continue;
+                                const bulletLines = (content.match(/^[\s]*[-*•]\s|^\*\*[^*]+\*\*:/gm) || []).length;
+                                const totalLines = content.split('\n').filter(l => l.trim()).length;
+                                if (bulletLines <= totalLines * 0.4) {
+                                    aiResponse = content;
+                                    break;
+                                }
+                            }
                         }
                     }
 
