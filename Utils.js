@@ -40,7 +40,8 @@ class Utils {
   static union = (setA, setB) => new Set([...setA, ...setB]);
   static innerXML(node) {
     const s = new XMLSerializer();
-    return Array.from(node.childNodes).map(n => s.serializeToString(n)).join('');
+    return Array.from(node.childNodes).map(n => s.serializeToString(n)).join('')
+        .replace(/&gt;/g, '>');
   }
 
   static roundAwayFromZero(value) {

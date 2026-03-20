@@ -7,6 +7,15 @@ const Quest = require("./Quest.js");
 const Faction = require("./Faction.js");
 const LLMClient = require("./LLMClient.js");
 const StatusEffect = require("./StatusEffect.js");
+const fs = require("fs");
+const path = require("path");
+
+const MOVE_DEBUG_LOG = path.join(__dirname, "logs", "move_location_debug.log");
+function moveDebug(...args) {
+    const line = `[${new Date().toISOString()}] ${args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ')}\n`;
+    try { fs.appendFileSync(MOVE_DEBUG_LOG, line); } catch (_) { /* ignore */ }
+    console.log(...args);
+}
 
 const BASE_TIMEOUT_MS = 120000;
 const DEFAULT_STATUS_DURATION = 3;
@@ -78,7 +87,7 @@ const EVENT_PROMPT_ORDER = [
         },
         {
             key: "alter_item",
-            prompt: `Was an item or piece of scenery in the scene or any inventory PERMANENTLY altered in any way (e.g., upgraded, modified, enchanted, broken, filled with items, etc.)? If so, answer in the format "[exact item name] -> [new item name or same item name] -> [1 sentence description of alteration]". If multiple items were altered, separate multiple entries with vertical bars. If it doesn't make sense for the name to change, use the same name for new item name. Note that if a meaningful fraction of an an object was consumed (a slice of cake, but not a single piece of wood from a large pile), this is considered an alteration. If the *entire* thing was consumed, this is considered completely consumed and not alteration. Being given, taken, worn, equipped, removed, dropped, etc, is not considered an alteration.`,
+            prompt: `Was an item or piece of scenery in the scene or any inventory PERMANENTLY altered in any way (e.g., upgraded, modified, enchanted, broken, filled with items, etc.)? If so, answer in the format "[exact item name] -> [new item name or same item name] -> [1 sentence description of alteration]". If multiple items were altered, separate multiple entries with vertical bars. If it doesn't make sense for the name to change, use the same name for new item name. Note that if any portion of a consumable item was used (a dose, drop, sip, bite, or any fraction — e.g., a vial of syrup after taking a drop, a potion after drinking some), this is considered an alteration. If the *entire* thing was consumed, it is completely consumed and NOT an alteration. Being given, taken, worn, equipped, removed, dropped, etc, is not considered an alteration.`,
         },
         {
             key: "consume_item",
@@ -98,7 +107,7 @@ const EVENT_PROMPT_ORDER = [
         },
         {
             key: "item_appear",
-            prompt: `Did any new inanimate items appear in the scene for the first time, either as newly created items or items that were mentioned as already existing but had not been previously described in the scene context? If so, list them in the format format as "[exact item name] -> [description]" with multiple items separated by vertical bars. Otherwise, answer N/A. Note that even if an item was crafted with multiple ingredients, it should only be listed once here as a new item.`,
+            prompt: `Did any brand new inanimate items appear in the scene — items that do not already exist anywhere in the game state above (not in any character's inventory, not in itemsInScene, not in sceneryList)? Items being pulled out, shown, handled, or retrieved from a character's existing inventory are NOT new items. Only list items that are genuinely created or introduced for the first time and have no match in the existing game state. If so, list them in the format "[exact item name] -> [description]" with multiple items separated by vertical bars. Otherwise, answer N/A. Note that even if an item was crafted with multiple ingredients, it should only be listed once here as a new item.`,
         },
         {
             key: "drop_item",
@@ -124,8 +133,12 @@ const EVENT_PROMPT_ORDER = [
             prompt: `Were any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) physically changed permanently in any way, such as being transformed, upgraded, downgraded, enhanced, damaged, repaired, healed, modified, or otherwise physically altered in a significant way, by anything other than damage from an attack? If so, answer in the format "[exact character name] -> [injury|status effect|gear|attire|mental change|temporary physical change|physical transformation] -> [1-2 sentence description of the change]". If multiple characters were altered, separate multiple entries with vertical bars. Note that things like temporary magical polymorphs and being turned to stone (where it's possible that it may be reversed) are better expressed as status effects and should not be mentioned here. If no characters were altered (which will be the case most of the time), answer N/A.`,
         },
         {
+            key: "npc_ability_change",
+            prompt: `Did any animate entity (NPC, animal, monster, robot, etc.) demonstrate a notable capability, power, or skill through action that is NOT already listed in their abilities? Or did an existing ability visibly change, evolve, or manifest differently than its current description? Only include capabilities demonstrated through action in the text, not merely mentioned or threatened. The capability must be consistent with the entity's race, class, and description. Prefer "update" using the existing ability name whenever the demonstrated capability is related to, a variation of, or could fall under an ability already listed for that entity. For example, a dragon spitting a fire bolt should update an existing "Fire Breath" ability, not create a new one. Only use "new" when the capability is truly distinct from all of the entity's existing abilities. If so, list in the format "[exact character name] -> [new|update] -> [ability name] -> [Active|Passive|Triggered] -> [1-2 sentence description of the ability as demonstrated]". Separate multiple entries with vertical bars. Otherwise, answer N/A.`,
+        },
+        {
             key: "status_effect_change",
-            prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) gain or lose any temporary status effects that you didn't list above as permanent changes? If so, list them in this format: "[exact entity name] -> [10 or fewer word description of effect] -> [gained/lost] [-> integer status effect level, if gained]". If there are multiple entries, separate them with vertical bars. Otherwise answer N/A.  Don't use redundant wording in the status effect description. We already know if the status is gained or lost, so just say 'Bob -> drunk -> gained -> 5' or 'Bob -> drunk -> lost'. When losing a status effect, use the exact name listed with the character XML. The status effect level should generally be the level of the cause of the status effect, be it an item or character. If the effect isn't from an item or a result of something a character did, just use the location level.`,
+            prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) gain or lose any temporary status effects that you didn't list above as permanent changes? Do NOT report a status effect that the entity already has listed in their status effects in the context above — only report genuinely new effects or effects being lost. If so, list them in this format: "[exact entity name] -> [10 or fewer word description of effect] -> [gained/lost] [-> integer status effect level, if gained]". If there are multiple entries, separate them with vertical bars. Otherwise answer N/A.  Don't use redundant wording in the status effect description. We already know if the status is gained or lost, so just say 'Bob -> drunk -> gained -> 5' or 'Bob -> drunk -> lost'. When losing a status effect, use the exact name listed with the character XML. The status effect level should generally be the level of the cause of the status effect, be it an item or character. If the effect isn't from an item or a result of something a character did, just use the location level.`,
         },
         {
             key: "npc_arrival_departure",
@@ -147,6 +160,10 @@ const EVENT_PROMPT_ORDER = [
         {
             key: "npc_first_appearance",
             prompt: `List all physically present entities (NPCs, animals, monsters, robots, etc.) that acted (interacted with the player, spoke, or did anything else) in textToCheck which aren't already listed in your answers above, in the player's party, or in the list of present entities. Separate entries with vertical bars. DO NOT include entites that are not present (mentioned in conversation, on the telephone, on a TV, in a crystal ball, or whatever), even if they are able to communicate with people at the location. For instance, "Android 609|Bob|Dire Wolf". If none, answer N/A.`,
+        },
+        {
+            key: "npc_scene_presence",
+            prompt: `Which named animate entities (NPCs, creatures, etc.) are physically present at this location during textToCheck? List all of them, whether or not they appear in the NPC context above. Use their exact names, separated by vertical bars. Do not include the player. Do not include entities merely mentioned in dialogue or thought — only those physically in the scene. If none, answer N/A.`,
         },
         {
             key: "party_change",
@@ -301,7 +318,7 @@ function splitPipeList(raw) {
         .split("|")
         .map((part) => part.trim())
         .filter(
-            (part) => part.length > 0 && !NO_EVENT_TOKENS.has(part.toLowerCase()),
+            (part) => part.length > 0 && !NO_EVENT_TOKENS.has(part.toLowerCase().replace(/[.!?]+$/, '')),
         );
 }
 
@@ -458,6 +475,11 @@ async function applyExitDiscovery(
             } catch (_) {
                 destination = null;
             }
+        }
+
+        // Discovery-only: don't pre-spawn stub locations. They'll be created when the player actually travels there.
+        if (!destination && !movePlayer) {
+            continue;
         }
 
         const isRegion = entry?.kind === "region";
@@ -620,6 +642,8 @@ async function movePlayerToDestination(
     { fallbackName = null, label = "move_location" } = {},
 ) {
     const player = context.player || eventsInstance.currentPlayer;
+    moveDebug(`[movePlayerToDestination] Called for "${destination}" (label: ${label}), player: ${player?.name || player?.id || 'unknown'}`);
+
     const enforceSinglePlayerMovePerTurn =
         !player?.isNPC && context?.allowAdditionalPlayerMoves !== true;
 
@@ -632,6 +656,7 @@ async function movePlayerToDestination(
         !Location ||
         typeof Location.get !== "function"
     ) {
+        moveDebug(`[movePlayerToDestination] Early return: missing deps (player=${!!player}, setLocation=${typeof player?.setLocation}, Location=${!!Location}, Location.get=${typeof Location?.get})`);
         throw new Error(
             `[${label}] Missing movement dependencies (player/setLocation/Location.get).`,
         );
@@ -671,6 +696,7 @@ async function movePlayerToDestination(
         } catch (_) {
             destinationObject = null;
         }
+        moveDebug(`[movePlayerToDestination] Location.get("${destinationName}"): ${destinationObject ? destinationObject.name : 'null'}`);
 
         if (!destinationObject && typeof Location.findByName === "function") {
             try {
@@ -678,13 +704,16 @@ async function movePlayerToDestination(
             } catch (_) {
                 destinationObject = null;
             }
+            moveDebug(`[movePlayerToDestination] Location.findByName("${destinationName}"): ${destinationObject ? destinationObject.name : 'null'}`);
         }
 
         if (!destinationObject) {
             destinationObject = findLocationByNameLoose(destinationName) || null;
+            moveDebug(`[movePlayerToDestination] findLocationByNameLoose("${destinationName}"): ${destinationObject ? destinationObject.name : 'null'}`);
         }
 
         if (!destinationObject) {
+            moveDebug(`[movePlayerToDestination] All lookups failed for "${destinationName}", attempting createLocationFromEvent`);
             let originLocation = context.location || null;
             if (!originLocation && player?.currentLocation) {
                 try {
@@ -724,9 +753,11 @@ async function movePlayerToDestination(
     // Destination-name de-dupe for repeated entries targeting the same place.
     // Cross-destination double moves are prevented by the Globals.processedMove guard above.
     if (trackingName && eventsInstance.movedLocations.has(trackingName)) {
+        moveDebug(`[movePlayerToDestination] Skipped: "${trackingName}" already in movedLocations`);
         return;
     }
 
+    moveDebug(`[movePlayerToDestination] Setting location: player "${player.name || player.id}" -> "${destinationObject.name}" (${destinationObject.id})`);
     const destinationId = destinationObject.id;
     player.setLocation(destinationObject.id);
     // setLocation may refuse unresolved ids; treat that as move failure so we do not emit
@@ -2446,7 +2477,7 @@ class Events {
                 .map((segment) => (typeof segment === "string" ? segment.trim() : ""))
                 .filter(
                     (segment) =>
-                        segment.length > 0 && !NO_EVENT_TOKENS.has(segment.toLowerCase()),
+                        segment.length > 0 && !NO_EVENT_TOKENS.has(segment.toLowerCase().replace(/[.!?]+$/, '')),
                 )
                 .join(" | ");
             rawEntries[key] = compactRaw;
@@ -2484,7 +2515,7 @@ class Events {
         }
 
         if (
-            parsedEntries.new_exit_discovered.length === 0 &&
+            parsedEntries.move_new_location.length === 0 &&
             parsedEntries.move_location.length === 0
         ) {
             const firstAppearance = parsedEntries.npc_first_appearance || [];
@@ -2505,13 +2536,51 @@ class Events {
 
                 // Check if the NPC already exists and is in this location (see Player.js and Location.js)
                 // so we can avoid redundant arrivals
-                const existingNames = Globals.location.getNPCNames();
+                const existingNames = Globals.location?.getNPCNames?.() || [];
                 const uniqueArrivals = arrivals.filter(
                     (entry) => !existingNames.includes(entry.name),
                 );
 
                 parsedEntries.npc_arrival_departure.push(...uniqueArrivals);
             }
+        }
+
+        // Fold scene-presence into arrivals for existing NPCs not already at the location.
+        // This catches NPCs depicted as "already here" in the narrative who aren't tracked
+        // at this location in the game state (e.g. after a location transition).
+        const scenePresence = parsedEntries.npc_scene_presence || [];
+        if (scenePresence.length) {
+            const presenceArrivals = scenePresence
+                .map((name) => normalizeString(name))
+                .filter((name) => name.length > 0)
+                .map((name) => ({
+                    name,
+                    action: "arrived",
+                    destination: null,
+                    scenePresence: true,
+                }));
+
+            if (!Array.isArray(parsedEntries.npc_arrival_departure)) {
+                parsedEntries.npc_arrival_departure = [];
+            }
+
+            const isMoving = (parsedEntries.move_new_location?.length > 0) || (parsedEntries.move_location?.length > 0);
+            const locationNames = isMoving ? [] : (Globals.location?.getNPCNames?.() || []);
+            const existingArrivalNames = SanitizedStringSet.fromArray(
+                parsedEntries.npc_arrival_departure.map((e) => e?.name || ""),
+            );
+
+            const uniquePresence = presenceArrivals.filter(
+                (entry) =>
+                    !locationNames.includes(entry.name) &&
+                    !existingArrivalNames.has(entry.name),
+            );
+
+            if (isMoving && uniquePresence.length) {
+                console.log(`[scene_presence] Folding ${uniquePresence.length} NPC(s) as arrivals during move: ${uniquePresence.map(e => e.name).join(', ')}`);
+            }
+
+            parsedEntries.npc_arrival_departure.push(...uniquePresence);
         }
 
         this._trackItemsFromParsing(parsedEntries);
@@ -2984,6 +3053,7 @@ class Events {
                         }
 
                         if (parts.length < 4) {
+                            console.warn(`[move_new_location] Failed to parse entry (${parts.length} parts): "${entry.substring(0, 200)}"`);
                             return null;
                         }
 
@@ -3290,6 +3360,60 @@ class Events {
                         };
                     })
                     .filter(Boolean),
+            npc_ability_change: (raw) =>
+                splitPipeList(raw)
+                    .map((entry) => {
+                        const parts = splitArrowParts(entry, 5);
+                        if (parts.length < 5) {
+                            return null;
+                        }
+                        const name = parts[0];
+                        const action = parts[1];
+                        const abilityName = parts[2];
+                        const type = parts[3];
+                        const description = parts.slice(4).join(" -> ");
+
+                        // Filter player names
+                        const lowerName = name.trim().toLowerCase();
+                        const playerName = (
+                            Globals.currentPlayer?.name || ""
+                        ).toLowerCase();
+                        if (
+                            [
+                                "you",
+                                "your character",
+                                "player",
+                                "the player",
+                                playerName,
+                            ].includes(lowerName)
+                        ) {
+                            return null;
+                        }
+
+                        // Normalize action to "new" or "update"
+                        const normalizedAction =
+                            (action || "").trim().toLowerCase() === "update"
+                                ? "update"
+                                : "new";
+
+                        // Normalize type to Active, Passive, or Triggered
+                        let normalizedType = "Passive";
+                        const typeLower = (type || "").trim().toLowerCase();
+                        if (typeLower === "active") {
+                            normalizedType = "Active";
+                        } else if (typeLower === "triggered") {
+                            normalizedType = "Triggered";
+                        }
+
+                        return {
+                            name: name.trim(),
+                            action: normalizedAction,
+                            abilityName: abilityName.trim(),
+                            type: normalizedType,
+                            description: description ? description.trim() : "",
+                        };
+                    })
+                    .filter(Boolean),
             status_effect_change: (raw) =>
                 splitPipeList(raw)
                     .map((entry) => {
@@ -3357,6 +3481,15 @@ class Events {
             npc_first_appearance: (raw) =>
                 splitPipeList(raw)
                     .map((entry) => stripAfterFirstArrow(entry))
+                    .filter(Boolean),
+            npc_scene_presence: (raw) =>
+                splitPipeList(raw)
+                    .map((entry) => {
+                        if (typeof entry !== "string") return "";
+                        const arrowIndex = entry.indexOf("->");
+                        const sliced = arrowIndex >= 0 ? entry.slice(0, arrowIndex) : entry;
+                        return sliced.trim();
+                    })
                     .filter(Boolean),
             party_change: (raw) =>
                 splitPipeList(raw)
@@ -3574,9 +3707,10 @@ class Events {
                     .filter(Boolean),
             move_location: (raw) => {
                 if (Globals.processedMove) {
+                    moveDebug(`[move_location parser] Skipped: Globals.processedMove is true`);
                     return [];
                 }
-                return splitPipeList(raw)
+                const result = splitPipeList(raw)
                     .map((entry) => {
                         if (typeof entry !== "string") {
                             return null;
@@ -3589,6 +3723,8 @@ class Events {
                         return normalizeArrowDelimiters(entry);
                     })
                     .filter(Boolean);
+                moveDebug(`[move_location parser] Raw: "${raw}" => Parsed: ${JSON.stringify(result)}`);
+                return result;
             },
             received_quest: (raw) => {
                 if (!Globals.config.quests.enabled) {
@@ -4831,7 +4967,7 @@ class Events {
                 if (!Array.isArray(items) || !items.length) {
                     return;
                 }
-                const { findThingByName } = this._deps;
+                const { findThingByName, findActorByName } = this._deps;
                 if (typeof findThingByName !== "function") {
                     throw new Error(
                         "consume_item handler requires findThingByName dependency.",
@@ -4857,6 +4993,30 @@ class Events {
                     } else {
                         console.debug(`[consume_item] Consuming item "${itemName}".`);
                     }
+
+                    // Apply causeStatusEffectOnTarget before removing the item
+                    const targetEffect = item.causeStatusEffectOnTarget || item.metadata?.causeStatusEffectOnTarget || (() => {
+                        const legacy = item.causeStatusEffect;
+                        if (!legacy) return null;
+                        if (legacy.applyToEquipper && !legacy.applyToTarget) return null;
+                        return legacy;
+                    })() || null;
+                    if (targetEffect) {
+                        const consumerName = typeof entry === "object" && entry.user ? String(entry.user).trim() : null;
+                        const consumer = (consumerName && typeof findActorByName === "function" ? findActorByName(consumerName) : null)
+                            || Globals.currentPlayer;
+                        if (consumer && typeof consumer.addStatusEffect === "function") {
+                            try {
+                                const applied = consumer.addStatusEffect(targetEffect, targetEffect.duration ?? 1);
+                                if (applied) {
+                                    console.debug(`[consume_item] Applied status effect "${applied.name || applied.description || 'Unknown'}" to ${consumer.name || 'consumer'}.`);
+                                }
+                            } catch (error) {
+                                console.warn(`[consume_item] Failed to apply status effect from "${itemName}":`, error?.message || error);
+                            }
+                        }
+                    }
+
                     this._removeItemFromInventories(item);
                     this._detachThingFromWorld(item);
                     this.destroyedItems.add(itemName);
@@ -5124,6 +5284,27 @@ class Events {
                                 }
                             }
 
+                            // Apply causeStatusEffectOnTarget if item has one (e.g., partial consumption of a potion/syrup)
+                            const targetEffect = thing.causeStatusEffectOnTarget || thing.metadata?.causeStatusEffectOnTarget || (() => {
+                                const legacy = thing.causeStatusEffect;
+                                if (!legacy) return null;
+                                if (legacy.applyToEquipper && !legacy.applyToTarget) return null;
+                                return legacy;
+                            })() || null;
+                            if (targetEffect) {
+                                const consumer = Globals.currentPlayer;
+                                if (consumer && typeof consumer.addStatusEffect === "function") {
+                                    try {
+                                        const applied = consumer.addStatusEffect(targetEffect, targetEffect.duration ?? 1);
+                                        if (applied) {
+                                            console.debug(`[alter_item] Applied status effect "${applied.name || applied.description || 'Unknown'}" to ${consumer.name || 'consumer'} from "${thing.name || originalName}".`);
+                                        }
+                                    } catch (error) {
+                                        console.warn(`[alter_item] Failed to apply status effect from "${thing.name || originalName}":`, error?.message || error);
+                                    }
+                                }
+                            }
+
                             const outcome = await alterThingByPrompt({
                                 thing,
                                 changeDescription,
@@ -5335,7 +5516,7 @@ class Events {
                         attributeBonuses: Array.isArray(template?.attributeBonuses)
                             ? template.attributeBonuses
                             : null,
-                        causeStatusEffect: template?.causeStatusEffect ?? null,
+                        causeStatusEffect: Thing.resolveCauseStatusEffect(template),
                         level: template?.level ?? null,
                         relativeLevel: template?.relativeLevel ?? null,
                     });
@@ -5553,6 +5734,110 @@ class Events {
                     return;
                 }
                 await this._handleAlterNpcEvents(entries, context);
+            },
+            npc_ability_change: async function (entries = [], context = {}) {
+                if (!Array.isArray(entries) || !entries.length) {
+                    return;
+                }
+                const { findActorByName } = this._deps;
+
+                for (const entry of entries) {
+                    const npc = findActorByName(entry.name);
+                    if (!npc || !npc.isNPC) {
+                        continue;
+                    }
+
+                    const abilities = npc.getAbilities();
+                    const lowerAbilityName = entry.abilityName.toLowerCase();
+
+                    // 1) Exact match (case-insensitive)
+                    let existingIndex = abilities.findIndex(
+                        (a) => a.name.toLowerCase() === lowerAbilityName,
+                    );
+
+                    // 2) Fuzzy match: substring or significant word overlap
+                    if (existingIndex === -1) {
+                        const entryWords = lowerAbilityName
+                            .split(/\s+/)
+                            .filter((w) => w.length > 2);
+                        let bestScore = 0;
+                        let bestIndex = -1;
+
+                        for (let i = 0; i < abilities.length; i++) {
+                            const existingLower =
+                                abilities[i].name.toLowerCase();
+
+                            // Substring match (either direction)
+                            if (
+                                existingLower.includes(lowerAbilityName) ||
+                                lowerAbilityName.includes(existingLower)
+                            ) {
+                                bestIndex = i;
+                                break;
+                            }
+
+                            // Word overlap (partial word matches via includes)
+                            const existingWords = existingLower
+                                .split(/\s+/)
+                                .filter((w) => w.length > 2);
+                            const overlap = entryWords.filter((w) =>
+                                existingWords.some(
+                                    (ew) => ew.includes(w) || w.includes(ew),
+                                ),
+                            ).length;
+                            const minWords = Math.min(
+                                entryWords.length,
+                                existingWords.length,
+                            );
+                            if (
+                                minWords > 0 &&
+                                overlap / minWords > 0.5 &&
+                                overlap > bestScore
+                            ) {
+                                bestScore = overlap;
+                                bestIndex = i;
+                            }
+                        }
+
+                        if (bestIndex !== -1) {
+                            existingIndex = bestIndex;
+                            console.log(
+                                `[npc_ability_change] Fuzzy matched "${entry.abilityName}" to existing "${abilities[bestIndex].name}" for ${npc.name}`,
+                            );
+                        }
+                    }
+
+                    if (existingIndex !== -1) {
+                        // Update existing ability
+                        abilities[existingIndex].description =
+                            entry.description;
+                        abilities[existingIndex].shortDescription = entry
+                            .description
+                            .split(/\s+/)
+                            .slice(0, 10)
+                            .join(" ");
+                        abilities[existingIndex].type = entry.type;
+                        npc.setAbilities(abilities);
+                        console.log(
+                            `[npc_ability_change] Updated ability "${abilities[existingIndex].name}" for ${npc.name}`,
+                        );
+                    } else {
+                        // Truly new ability
+                        npc.addAbility({
+                            name: entry.abilityName,
+                            description: entry.description,
+                            shortDescription: entry.description
+                                .split(/\s+/)
+                                .slice(0, 10)
+                                .join(" "),
+                            type: entry.type,
+                            level: npc.level || 1,
+                        });
+                        console.log(
+                            `[npc_ability_change] Added new ability "${entry.abilityName}" for ${npc.name}`,
+                        );
+                    }
+                }
             },
             npc_arrival_departure: async function (entries = [], context = {}) {
                 if (!Array.isArray(entries) || !entries.length) {
@@ -5819,17 +6104,33 @@ class Events {
                     }
 
                     let finalizedName = originalName;
+                    const isScenePresence = Boolean(entry?.scenePresence);
                     if (action === "arrived" || isFirstAppearance) {
-                        try {
-                            const ensuredNpc = await ensureNpcByName(originalName, context);
-                            if (ensuredNpc && typeof ensuredNpc.name === "string") {
-                                const trimmed = ensuredNpc.name.trim();
+                        if (isScenePresence) {
+                            // Scene-presence entries only move existing NPCs — never create new ones.
+                            const existing = findActorByName?.(originalName);
+                            if (existing && typeof existing.name === "string") {
+                                const trimmed = existing.name.trim();
                                 if (trimmed) {
                                     finalizedName = trimmed;
                                 }
+                            } else {
+                                // NPC doesn't exist; skip this entry entirely.
+                                suppressedIndexes.add(index);
+                                continue;
                             }
-                        } catch (error) {
-                            console.warn("Failed to ensure NPC arrival:", error.message);
+                        } else {
+                            try {
+                                const ensuredNpc = await ensureNpcByName(originalName, context);
+                                if (ensuredNpc && typeof ensuredNpc.name === "string") {
+                                    const trimmed = ensuredNpc.name.trim();
+                                    if (trimmed) {
+                                        finalizedName = trimmed;
+                                    }
+                                }
+                            } catch (error) {
+                                console.warn("Failed to ensure NPC arrival:", error.message);
+                            }
                         }
                     }
 
@@ -6709,13 +7010,16 @@ class Events {
                 }
             },
             move_location: async function (entries = [], context = {}) {
+                moveDebug(`[move_location handler] Called with entries:`, JSON.stringify(entries));
                 if (!Array.isArray(entries) || !entries.length) {
+                    moveDebug(`[move_location handler] Skipped: no entries`);
                     return;
                 }
                 const destinationInput = entries[entries.length - 1];
                 const destinationName =
                     typeof destinationInput === "string" ? destinationInput.trim() : "";
                 if (!destinationName) {
+                    moveDebug(`[move_location handler] Skipped: empty destination name`);
                     return;
                 }
                 // De-dupe repeated move events for the same destination in a single turn.
@@ -6724,14 +7028,18 @@ class Events {
                 // Do not pre-add to movedLocations here; movePlayerToDestination records it
                 // only after a verified location write.
                 if (Events.movedLocations.has(destinationName)) {
+                    moveDebug(`[move_location handler] Skipped: "${destinationName}" already in movedLocations`);
                     return;
                 }
+                moveDebug(`[move_location handler] Moving to "${destinationName}"`);
                 try {
                     await movePlayerToDestination(this, destinationName, context, {
                         fallbackName: destinationName,
                         label: "move_location",
                     });
+                    moveDebug(`[move_location handler] Successfully moved to "${destinationName}"`);
                 } catch (error) {
+                    moveDebug(`[move_location handler] FAILED: ${error.message}`);
                     throw new Error(
                         `Failed to move player location to "${destinationName}": ${error.message}`,
                     );

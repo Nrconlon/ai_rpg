@@ -3156,6 +3156,18 @@ function findActorByName(name) {
         }
     }
 
+    // Fallback: substring match to catch name variations (e.g. "Colette" vs "Madame Colette Verosa")
+    if (normalized.length >= 4) {
+        for (const actor of players.values()) {
+            if (actor && typeof actor.name === 'string') {
+                const actorName = actor.name.trim().toLowerCase();
+                if (actorName.includes(normalized) || normalized.includes(actorName)) {
+                    return actor;
+                }
+            }
+        }
+    }
+
     return null;
 }
 
@@ -3799,6 +3811,10 @@ function pruneAndDecrementStatusEffects(entity) {
 
 function tickStatusEffectsForAction({ player = currentPlayer, location = null } = {}) {
     if (!player) {
+        return { location: null, region: null };
+    }
+
+    if (config.linger_mode) {
         return { location: null, region: null };
     }
 
@@ -11163,7 +11179,7 @@ async function alterThingByPrompt({
         isSalvageable: itemForPrompt.isSalvageable ? 'true' : 'false',
         properties: itemForPrompt.properties,
         attributeBonuses: itemForPrompt.attributeBonuses,
-        causeStatusEffect: itemForPrompt.causeStatusEffect
+        causeStatusEffect: Thing.resolveCauseStatusEffect(itemForPrompt)
     };
 
     const rarityDefinitionForSeed = Thing.getRarityDefinition(thingSeed.rarity, { fallbackToDefault: true });
@@ -17592,7 +17608,7 @@ async function generateLocationThingsForLocation({ location } = {}) {
             itemTypeDetail: itemData.type || null,
             slot: itemData.slot || null,
             attributeBonuses: thingType === 'item' ? scaledAttributeBonuses : [],
-            causeStatusEffect: itemData.causeStatusEffect,
+            causeStatusEffect: Thing.resolveCauseStatusEffect(itemData),
             level: computedLevel,
             relativeLevel,
             metadata: cleanedMetadata,
@@ -19795,6 +19811,29 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                 attributes[attrName] = mapNpcRatingToValue(rating);
             }
 
+            // Live dedup check: if an NPC with this name already exists, move them here instead of creating a duplicate
+            const existingActor = findActorByName(npcData.name);
+            if (existingActor) {
+                const oldLocationId = typeof existingActor.currentLocation === 'string' ? existingActor.currentLocation : null;
+                if (oldLocationId && oldLocationId !== location.id) {
+                    try {
+                        const oldLocation = gameLocations.get(oldLocationId) || Location.get(oldLocationId);
+                        if (oldLocation && typeof oldLocation.removeNpcId === 'function') {
+                            oldLocation.removeNpcId(existingActor.id);
+                        }
+                    } catch (_) { /* old location may not exist */ }
+                }
+                if (typeof existingActor.setLocation === 'function') {
+                    existingActor.setLocation(location.id);
+                }
+                if (typeof location.addNpcId === 'function') {
+                    location.addNpcId(existingActor.id);
+                }
+                created.push(existingActor);
+                console.log(`🔗 NPC "${npcData.name}" already exists (${existingActor.id}) — moved to location ${location.id} instead of creating duplicate.`);
+                continue;
+            }
+
             const npc = new Player({
                 name: npcData.name || 'Unnamed NPC',
                 description: npcData.description || '',
@@ -20172,6 +20211,34 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
             }
             if (!targetLocation && regionLocations.length > 0) {
                 targetLocation = regionLocations[0];
+            }
+
+            // Live dedup check: if an NPC with this name already exists, move them here instead of creating a duplicate
+            const existingActor = findActorByName(npcData.name);
+            if (existingActor) {
+                const oldLocationId = typeof existingActor.currentLocation === 'string' ? existingActor.currentLocation : null;
+                if (targetLocation && oldLocationId !== targetLocation.id) {
+                    if (oldLocationId) {
+                        try {
+                            const oldLocation = gameLocations.get(oldLocationId) || Location.get(oldLocationId);
+                            if (oldLocation && typeof oldLocation.removeNpcId === 'function') {
+                                oldLocation.removeNpcId(existingActor.id);
+                            }
+                        } catch (_) { /* old location may not exist */ }
+                    }
+                    if (typeof existingActor.setLocation === 'function') {
+                        existingActor.setLocation(targetLocation.id);
+                    }
+                    if (typeof targetLocation.addNpcId === 'function') {
+                        targetLocation.addNpcId(existingActor.id);
+                    }
+                }
+                existingActor.originRegionId = region.id;
+                existingActor.isRegionImportant = true;
+                region.npcIds.push(existingActor.id);
+                created.push(existingActor);
+                console.log(`🔗 Region NPC "${npcData.name}" already exists (${existingActor.id}) — moved to region ${region.id} instead of creating duplicate.`);
+                continue;
             }
 
             const npc = new Player({
@@ -24333,6 +24400,17 @@ app.post('/config', (req, res) => {
     }
 });
 
+// Linger mode runtime toggle (in-memory only, not persisted to config.yaml)
+app.get('/api/linger-mode', (req, res) => {
+    res.json({ enabled: !!config.linger_mode });
+});
+
+app.post('/api/linger-mode', (req, res) => {
+    const { enabled } = req.body || {};
+    config.linger_mode = !!enabled;
+    res.json({ success: true, enabled: config.linger_mode });
+});
+
 // Settings management page
 app.get('/settings', (req, res) => {
     const { skills: defaultExistingSkills, error: defaultExistingSkillsError } = loadDefaultSkillsForSettings();
@@ -24512,6 +24590,7 @@ const apiScope = {
     imageFileExists,
     realtimeHub,
     addJobSubscriber,
+    generateImagePromptFromTemplate,
 
 };
 

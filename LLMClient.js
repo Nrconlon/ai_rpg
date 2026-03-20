@@ -1786,6 +1786,10 @@ class LLMClient {
             if (headers !== undefined && headers !== null && !LLMClient.#isPlainObject(headers)) {
                 throw new Error('chatCompletion headers must be an object when provided.');
             }
+
+            if (aiConfig.reasoning !== false) {
+                payload.reasoning = true;
+            }
             const resolvedSeed = Number.isFinite(seed) ? Math.trunc(seed) : LLMClient.#generateSeed();
             if (!Array.isArray(messages) || messages.length === 0) {
                 throw new Error('LLMClient.chatCompletion requires at least one message.');

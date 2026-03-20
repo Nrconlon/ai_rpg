@@ -8,11 +8,43 @@
       "title": "Load Checkpoint"
     }
   },
+  "17": {
+    "inputs": {
+      "stop_at_clip_layer": -2,
+      "clip": [
+        "1",
+        1
+      ]
+    },
+    "class_type": "CLIPSetLastLayer",
+    "_meta": {
+      "title": "CLIP Set Last Layer"
+    }
+  },
+  "16": {
+    "inputs": {
+      "lora_name": "DetailerILv2-000008.safetensors",
+      "strength_model": 1.0,
+      "strength_clip": 1.0,
+      "model": [
+        "1",
+        0
+      ],
+      "clip": [
+        "17",
+        0
+      ]
+    },
+    "class_type": "LoraLoader",
+    "_meta": {
+      "title": "Load LoRA (Model and CLIP)"
+    }
+  },
   "2": {
     "inputs": {
       "text": "{{ image.prompt | json }}",
       "clip": [
-        "1",
+        "16",
         1
       ]
     },
@@ -25,7 +57,7 @@
     "inputs": {
       "text": "{{ image.negativePrompt | json }}",
       "clip": [
-        "1",
+        "16",
         1
       ]
     },
@@ -37,13 +69,13 @@
   "4": {
     "inputs": {
       "seed": {{ image.seed }},
-      "steps": 20,
-      "cfg": 8,
-      "sampler_name": "uni_pc",
-      "scheduler": "beta",
+      "steps": 35,
+      "cfg": 7.0,
+      "sampler_name": "dpmpp_2m_sde",
+      "scheduler": "karras",
       "denoise": 1,
       "model": [
-        "1",
+        "16",
         0
       ],
       "positive": [
@@ -108,6 +140,7 @@
     "inputs": {
       "upscale_method": "lanczos",
       "megapixels": {{ image.megapixels }},
+      "resolution_steps": 1,
       "image": [
         "6",
         0
@@ -121,13 +154,13 @@
   "10": {
     "inputs": {
       "seed": {{ image.seed }},
-      "steps": 5,
-      "cfg": 4,
-      "sampler_name": "uni_pc",
-      "scheduler": "beta",
+      "steps": 10,
+      "cfg": 7.0,
+      "sampler_name": "dpmpp_2m_sde",
+      "scheduler": "karras",
       "denoise": 0.6,
       "model": [
-        "1",
+        "16",
         0
       ],
       "positive": [
@@ -178,16 +211,6 @@
     "class_type": "VAEDecode",
     "_meta": {
       "title": "VAE Decode"
-    }
-  },
-  "14": {
-    "inputs": {
-      "upscale_method": "nearest-exact",
-      "scale_by": 1
-    },
-    "class_type": "ImageScaleBy",
-    "_meta": {
-      "title": "Upscale Image By"
     }
   },
   "15": {

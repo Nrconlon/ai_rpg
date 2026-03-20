@@ -342,57 +342,17 @@ module.exports.register = function(scope) {
                 throw new Error('Failed to generate prompts from template');
             }
 
-            // Use LLM to generate the final image prompt
-            const LLMClient = require(require('path').join(scope.modLoader.baseDir, 'LLMClient.js'));
-            const messages = [
-                { role: 'system', content: prompts.systemPrompt },
-                { role: 'user', content: prompts.generationPrompt }
-            ];
-
-            // Fetch current mod config dynamically (not the snapshot from initialization)
-            const currentModConfig = scope.modLoader.getModConfig(modName);
-            const useCustomModel = currentModConfig && currentModConfig.aiModel && currentModConfig.aiModel.trim() !== '';
-            
-            console.log(`🎨 Generating scene illustration prompt via LLM... ${useCustomModel ? `(Model: ${currentModConfig.aiModel})` : '(Default Model)'}`);
+            // Use the main system's image prompt pipeline (same model + prefix logic as NPC/location images)
+            console.log(`🎨 Generating scene illustration prompt via LLM (default model)...`);
             const requestStart = Date.now();
-            
-            const llmOptions = {
-                messages,
-                metadataLabel: 'scene_illustration_prompt',
-                validateXML: false
-            };
 
-            // Use custom model if configured
-            if (useCustomModel) {
-                llmOptions.model = currentModConfig.aiModel.trim();
-            }
+            const { prompt: finalPrompt, durationSeconds } = await scope.generateImagePromptFromTemplate(prompts, { prefixType: 'scenery' });
 
-            const responseText = await LLMClient.chatCompletion(llmOptions);
-
-            if (!responseText || !responseText.trim()) {
+            if (!finalPrompt || !finalPrompt.trim()) {
                 throw new Error('LLM returned empty response');
             }
 
-            const durationSeconds = (Date.now() - requestStart) / 1000;
-            console.log(`🎨 LLM prompt generated in ${durationSeconds.toFixed(1)}s`);
-
-            // Clean up the prompt
-            let finalPrompt = responseText
-                .replace(/[""]/g, '"')
-                .replace(/['']/g, "'")
-                .replace(/[—–]/g, '-')
-                .trim();
-
-            // Apply scenery prefix if available
-            try {
-                const activeSettingSnapshot = scope.getActiveSettingSnapshot?.();
-                const prefix = activeSettingSnapshot?.imagePromptPrefixScenery || '';
-                if (prefix.trim()) {
-                    finalPrompt = `${prefix.trim()}\n\n${finalPrompt}`;
-                }
-            } catch (e) {
-                // Ignore prefix errors
-            }
+            console.log(`🎨 LLM prompt generated in ${durationSeconds != null ? durationSeconds.toFixed(1) + 's' : 'unknown'}`);
 
             // Log the prompt
             try {
@@ -403,7 +363,7 @@ module.exports.register = function(scope) {
                 const timestamp = Date.now();
                 const logPath = require('path').join(logsDir, `scene_illustration_${timestamp}.log`);
                 const logContent = [
-                    `Duration: ${durationSeconds.toFixed(2)}s`,
+                    `Duration: ${durationSeconds != null ? durationSeconds.toFixed(2) + 's' : 'unknown'}`,
                     '=== SYSTEM PROMPT ===',
                     prompts.systemPrompt,
                     '',
