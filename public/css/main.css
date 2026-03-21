@@ -1012,6 +1012,33 @@ p:not(:last-child) {
   margin-bottom: 12px;
 }
 
+.tab-bar-spacer {
+  flex: 1;
+}
+
+.tab-toggle {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, border 0.2s ease, color 0.2s ease;
+  font-size: inherit;
+}
+
+.tab-toggle:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.tab-toggle[aria-pressed=true] {
+  background: rgba(76, 175, 80, 0.3);
+  border-color: rgba(76, 175, 80, 0.6);
+  color: #81c784;
+}
+
 .tab-button {
   background: rgba(255, 255, 255, 0.15);
   color: #ffffff;
@@ -1032,29 +1059,6 @@ p:not(:last-child) {
 .tab-button.active {
   background: rgba(255, 255, 255, 0.35);
   border-color: rgba(255, 255, 255, 0.6);
-}
-
-.tab-toggle {
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 4px;
-  padding: 6px 14px;
-  cursor: pointer;
-  font-size: 14px;
-  transition: background 0.2s ease, border 0.2s ease, color 0.2s ease;
-}
-
-.tab-toggle:hover {
-  background: rgba(255, 255, 255, 0.2);
-  border-color: rgba(255, 255, 255, 0.35);
-  color: #fff;
-}
-
-.tab-toggle[aria-pressed="true"] {
-  background: rgba(180, 130, 255, 0.35);
-  border-color: rgba(180, 130, 255, 0.7);
-  color: #ddc8ff;
 }
 
 .tab-panels {
@@ -2713,6 +2717,7 @@ body.dark .thing-toggle-hint {
 }
 
 .world-time-indicator {
+  position: relative;
   margin: 0 0 12px;
   display: flex;
   flex-direction: column;
@@ -2767,6 +2772,111 @@ body.dark .thing-toggle-hint {
 
 .world-time-indicator__weather[hidden] {
   display: none;
+}
+
+.world-time-edit-button {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  font-size: 0.55rem;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease, background 0.18s ease;
+  background: rgba(59, 130, 246, 0.18);
+  border: 1px solid rgba(147, 197, 253, 0.45);
+  color: #bfdbfe;
+  padding: 0;
+  line-height: 1;
+}
+.world-time-edit-button:hover, .world-time-edit-button:focus {
+  background: rgba(59, 130, 246, 0.35);
+  border-color: rgba(191, 219, 254, 0.65);
+  color: #e0f2fe;
+  outline: none;
+}
+
+.world-time-indicator:hover .world-time-edit-button,
+.world-time-edit-button:focus {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.world-time-edit-panel {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.world-time-edit-panel[hidden] {
+  display: none;
+}
+
+.world-time-edit-panel__label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.69rem;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.world-time-edit-panel__input {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 6px;
+  font-size: 0.72rem;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.3);
+  color: rgba(255, 255, 255, 0.95);
+  outline: none;
+}
+.world-time-edit-panel__input:focus {
+  border-color: rgba(129, 140, 248, 0.6);
+}
+
+.world-time-edit-panel__actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.world-time-edit-panel__btn {
+  padding: 3px 10px;
+  font-size: 0.69rem;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.world-time-edit-panel__btn--save {
+  background: rgba(59, 130, 246, 0.3);
+  border-color: rgba(147, 197, 253, 0.45);
+  color: #bfdbfe;
+}
+.world-time-edit-panel__btn--save:hover {
+  background: rgba(59, 130, 246, 0.5);
+  border-color: rgba(191, 219, 254, 0.65);
+}
+
+.world-time-edit-panel__btn--cancel {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.7);
+}
+.world-time-edit-panel__btn--cancel:hover {
+  background: rgba(255, 255, 255, 0.15);
 }
 
 .abilities-grid {

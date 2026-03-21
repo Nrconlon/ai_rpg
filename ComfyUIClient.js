@@ -56,10 +56,13 @@ class ComfyUIClient {
       };
 
     } catch (error) {
-      console.error(`❌ Failed to queue ComfyUI prompt ${id}:`, error.message);
+      const detail = error.response?.data
+        ? (typeof error.response.data === 'string' ? error.response.data : JSON.stringify(error.response.data))
+        : error.message;
+      console.error(`❌ Failed to queue ComfyUI prompt ${id}:`, detail);
       return {
         success: false,
-        error: error.message,
+        error: detail,
         promptId: id
       };
     }

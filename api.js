@@ -17601,6 +17601,7 @@ module.exports = function registerApiRoutes(scope) {
             existingFactions = [],
             settingDescription = '',
             generationNotes = '',
+            currentId = null,
             metadataLabel = 'faction_autofill',
             metadataPrefix = 'faction_autofill'
         } = {}) => {
@@ -17611,9 +17612,12 @@ module.exports = function registerApiRoutes(scope) {
                 throw new Error('existingFactions must be an array.');
             }
 
-            const context = buildExistingFactionContext(existingFactions);
+            const filteredFactions = currentId
+                ? existingFactions.filter(entry => entry?.id !== currentId)
+                : existingFactions;
+            const context = buildExistingFactionContext(filteredFactions);
             const normalizedFaction = normalizeFactionAutofillPayload(incomingFaction, {
-                currentId: null,
+                currentId,
                 validTargetIds: context.validTargetIds
             });
             if (!factionPayloadNeedsAutofill(normalizedFaction, {
@@ -17800,11 +17804,20 @@ module.exports = function registerApiRoutes(scope) {
                     .filter(Boolean)
                     .sort((a, b) => (a?.name || '').localeCompare((b?.name || ''), undefined, { sensitivity: 'base' }));
 
+                const incomingName = typeof incomingFaction.name === 'string'
+                    ? incomingFaction.name.trim().toLowerCase()
+                    : '';
+                const matchedExisting = incomingName
+                    ? existingFactions.find(entry => (entry.name || '').trim().toLowerCase() === incomingName)
+                    : null;
+                const currentId = matchedExisting?.id || null;
+
                 const result = await runFactionAutofill({
                     incomingFaction,
                     existingFactions,
                     settingDescription: currentSetting?.description || '',
                     generationNotes,
+                    currentId,
                     metadataLabel: 'faction_autofill',
                     metadataPrefix: 'faction_autofill'
                 });
