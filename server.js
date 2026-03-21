@@ -3467,11 +3467,21 @@ function buildReservedActorNameSet() {
     if (players instanceof Map) {
         for (const actor of players.values()) {
             addName(actor?.name);
+            if (typeof actor?.getAliases === 'function') {
+                for (const alias of actor.getAliases()) {
+                    addName(alias);
+                }
+            }
         }
     }
 
     for (const actor of Player.getAll()) {
         addName(actor?.name);
+        if (typeof actor?.getAliases === 'function') {
+            for (const alias of actor.getAliases()) {
+                addName(alias);
+            }
+        }
     }
 
     if (currentPlayer && typeof currentPlayer.getPartyMembers === 'function') {
@@ -9998,6 +10008,39 @@ const imagePromptEnv = nunjucks.configure('imagegen', {
     autoescape: false
 });
 
+// Monkey-patch Nunjucks Template._compile to log template source on parse errors
+const _origCompile = nunjucks.Template.prototype._compile;
+nunjucks.Template.prototype._compile = function _compilePatched() {
+    try {
+        return _origCompile.call(this);
+    } catch (err) {
+        const src = typeof this.tmplStr === 'string' ? this.tmplStr : String(this.tmplStr ?? '');
+        const lines = src.split('\n');
+
+        // Find all {% if %} and {% endif %} lines to help locate the unclosed one
+        const ifLines = [];
+        const endifLines = [];
+        for (let i = 0; i < lines.length; i++) {
+            if (/\{%[-\s]*if\s/.test(lines[i])) ifLines.push(i + 1);
+            if (/\{%[-\s]*endif/.test(lines[i])) endifLines.push(i + 1);
+        }
+
+        console.error(`\n🔴 Nunjucks compile error for template "${this.path || '(inline)'}": ${err.message}`);
+        console.error(`🔴 Template length: ${src.length} chars, ${lines.length} lines`);
+        console.error(`🔴 {% if %} on lines: [${ifLines.join(', ')}]  (${ifLines.length} total)`);
+        console.error(`🔴 {% endif %} on lines: [${endifLines.join(', ')}]  (${endifLines.length} total)`);
+        if (ifLines.length !== endifLines.length) {
+            console.error(`🔴 MISMATCH: ${ifLines.length} ifs vs ${endifLines.length} endifs`);
+        }
+
+        // Log last 30 lines of the template (likely where it got cut off)
+        const tail = lines.slice(-30).map((l, i) => `  ${lines.length - 30 + i + 1}: ${l}`).join('\n');
+        console.error(`🔴 Last 30 lines of template:\n${tail}\n`);
+
+        throw err;
+    }
+};
+
 // Import and add dice filters to both environments
 const diceModule = require('./nunjucks_dice.js');
 const e = require('express');
@@ -14491,7 +14534,25 @@ function applyNpcAliases(npc, aliases = []) {
     if (typeof npc.setAliases !== 'function') {
         return;
     }
-    npc.setAliases(Array.isArray(aliases) ? aliases : []);
+
+    let filteredAliases = Array.isArray(aliases) ? aliases : [];
+
+    if (filteredAliases.length) {
+        try {
+            const reserved = buildReservedActorNameSet();
+            filteredAliases = filteredAliases.filter(alias => {
+                if (reserved.has(alias)) {
+                    console.log(`🏷️ Dropping alias "${alias}" for ${npc.name} — collides with existing name/alias`);
+                    return false;
+                }
+                return true;
+            });
+        } catch (error) {
+            console.warn('Failed to check alias collisions:', error?.message);
+        }
+    }
+
+    npc.setAliases(filteredAliases);
 }
 
 function buildLevelUpSummaryForCharacter(character, { previousLevel = null } = {}) {
@@ -19687,23 +19748,8 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
         });
 
         const parsedResult = parseLocationNpcs(npcResponse);
-        let npcsAtLocation = SanitizedStringSet.fromArray(location.getNPCNames());
         let npcs = Array.isArray(parsedResult?.npcs) ? parsedResult.npcs : [];
         let npcMemoryMap = parsedResult?.memories instanceof Map ? parsedResult.memories : new Map();
-
-        // Remove NPCs from npcs and mpcMemoryMap that have a name property that's contained in npcsAtLocation
-        npcs = npcs.filter(npcData => {
-            const npcName = npcData && typeof npcData.name === 'string' ? npcData.name : '';
-            if (npcName && npcsAtLocation.has(npcName)) {
-                console.log(`🧑‍🤝‍🧑 Skipping NPC generation for duplicate name "${npcName}" at location ${location.id}`);
-                // Remove from npcMemoryMap as well
-                if (npcMemoryMap instanceof Map && npcMemoryMap.has(npcName)) {
-                    npcMemoryMap.delete(npcName);
-                }
-                return false; // Exclude this NPC from the list
-            }
-            return true; // Keep this NPC
-        });
 
         const baseConversation = [...messages, { role: 'assistant', content: npcResponse }];
         const npctimeoutScale = Math.max(1, npcs.length || npcCountHint);
@@ -19809,29 +19855,6 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
             for (const attrName of Object.keys(attributeDefinitionsForPrompt)) {
                 const rating = attrSource[attrName] || attrSource[attrName.toLowerCase()];
                 attributes[attrName] = mapNpcRatingToValue(rating);
-            }
-
-            // Live dedup check: if an NPC with this name already exists, move them here instead of creating a duplicate
-            const existingActor = findActorByName(npcData.name);
-            if (existingActor) {
-                const oldLocationId = typeof existingActor.currentLocation === 'string' ? existingActor.currentLocation : null;
-                if (oldLocationId && oldLocationId !== location.id) {
-                    try {
-                        const oldLocation = gameLocations.get(oldLocationId) || Location.get(oldLocationId);
-                        if (oldLocation && typeof oldLocation.removeNpcId === 'function') {
-                            oldLocation.removeNpcId(existingActor.id);
-                        }
-                    } catch (_) { /* old location may not exist */ }
-                }
-                if (typeof existingActor.setLocation === 'function') {
-                    existingActor.setLocation(location.id);
-                }
-                if (typeof location.addNpcId === 'function') {
-                    location.addNpcId(existingActor.id);
-                }
-                created.push(existingActor);
-                console.log(`🔗 NPC "${npcData.name}" already exists (${existingActor.id}) — moved to location ${location.id} instead of creating duplicate.`);
-                continue;
             }
 
             const npc = new Player({
@@ -20211,34 +20234,6 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
             }
             if (!targetLocation && regionLocations.length > 0) {
                 targetLocation = regionLocations[0];
-            }
-
-            // Live dedup check: if an NPC with this name already exists, move them here instead of creating a duplicate
-            const existingActor = findActorByName(npcData.name);
-            if (existingActor) {
-                const oldLocationId = typeof existingActor.currentLocation === 'string' ? existingActor.currentLocation : null;
-                if (targetLocation && oldLocationId !== targetLocation.id) {
-                    if (oldLocationId) {
-                        try {
-                            const oldLocation = gameLocations.get(oldLocationId) || Location.get(oldLocationId);
-                            if (oldLocation && typeof oldLocation.removeNpcId === 'function') {
-                                oldLocation.removeNpcId(existingActor.id);
-                            }
-                        } catch (_) { /* old location may not exist */ }
-                    }
-                    if (typeof existingActor.setLocation === 'function') {
-                        existingActor.setLocation(targetLocation.id);
-                    }
-                    if (typeof targetLocation.addNpcId === 'function') {
-                        targetLocation.addNpcId(existingActor.id);
-                    }
-                }
-                existingActor.originRegionId = region.id;
-                existingActor.isRegionImportant = true;
-                region.npcIds.push(existingActor.id);
-                created.push(existingActor);
-                console.log(`🔗 Region NPC "${npcData.name}" already exists (${existingActor.id}) — moved to region ${region.id} instead of creating duplicate.`);
-                continue;
             }
 
             const npc = new Player({

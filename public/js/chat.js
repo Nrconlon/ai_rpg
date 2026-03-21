@@ -4,6 +4,7 @@ class AIRPGChat {
     constructor() {
         this.chatLog = document.getElementById('chatLog');
         this._userAtBottom = true;
+        this._lastScrollTop = 0;
         this._rebuildInProgress = false;
         this._scrollDebug = false;
         this._scrollDebugLog = [];
@@ -35,19 +36,23 @@ class AIRPGChat {
                 }
             });
 
-            // Scroll event ONLY for detecting return-to-bottom.
-            // Safe direction: if this fires late, worst case is one
-            // skipped auto-scroll (harmless).
+            // Scroll event for detecting return-to-bottom and scrollbar-drag-up.
+            // Uses direction check: only flips _userAtBottom to false when
+            // scrollTop decreases (user scrolled up), avoiding false triggers
+            // from programmatic scrolls, layout reflows, or browser restoration.
             this.chatLog.addEventListener('scroll', () => {
                 if (this._rebuildInProgress) return;
-                const dist = this.chatLog.scrollHeight - this.chatLog.clientHeight - this.chatLog.scrollTop;
+                const scrollTop = this.chatLog.scrollTop;
+                const dist = this.chatLog.scrollHeight - this.chatLog.clientHeight - scrollTop;
+                const scrolledUp = scrollTop < this._lastScrollTop;
                 if (this._scrollDebug) {
                     const oldFlag = this._userAtBottom;
                     const atBottom = dist <= AIRPGChat.SCROLL_BOTTOM_THRESHOLD;
-                    const willFlip = atBottom ? (!oldFlag ? `false→true` : null) : (oldFlag ? `true→false` : null);
+                    const willFlip = atBottom ? (!oldFlag ? `false→true` : null)
+                        : (oldFlag && scrolledUp ? `true→false` : null);
                     this._sdLog('SCROLL', {
                         dist: Math.round(dist),
-                        scrollTop: Math.round(this.chatLog.scrollTop),
+                        scrollTop: Math.round(scrollTop),
                         scrollHeight: this.chatLog.scrollHeight,
                         clientHeight: this.chatLog.clientHeight,
                         flagChange: willFlip
@@ -55,9 +60,10 @@ class AIRPGChat {
                 }
                 if (dist <= AIRPGChat.SCROLL_BOTTOM_THRESHOLD) {
                     this._sdSetFlag(true, 'scroll-listener');
-                } else {
+                } else if (scrolledUp) {
                     this._sdSetFlag(false, 'scroll-listener');
                 }
+                this._lastScrollTop = scrollTop;
             });
 
             document.addEventListener('keydown', (e) => {
@@ -665,6 +671,7 @@ class AIRPGChat {
             const response = await fetch('/api/chat/history');
             const data = await response.json();
 
+            this._userAtBottom = true;
             this.updateServerHistory(Array.isArray(data.history) ? data.history : []);
             if (data?.worldTime && typeof data.worldTime === 'object') {
                 this.updateWorldTimeIndicator(data.worldTime, { emitTransitions: false });
@@ -1239,6 +1246,13 @@ class AIRPGChat {
             }
         }
         this._rebuildInProgress = true;
+
+        const existingPromptProgress = (this.promptProgressMessage && this.promptProgressMessage.parentNode === this.chatLog)
+            ? this.promptProgressMessage
+            : null;
+        if (existingPromptProgress) {
+            existingPromptProgress.remove();
+        }
 
         this.chatLog.innerHTML = '';
         if (fragment.childNodes.length === 0) {

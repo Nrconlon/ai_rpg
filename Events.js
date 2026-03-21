@@ -10,12 +10,6 @@ const StatusEffect = require("./StatusEffect.js");
 const fs = require("fs");
 const path = require("path");
 
-const MOVE_DEBUG_LOG = path.join(__dirname, "logs", "move_location_debug.log");
-function moveDebug(...args) {
-    const line = `[${new Date().toISOString()}] ${args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ')}\n`;
-    try { fs.appendFileSync(MOVE_DEBUG_LOG, line); } catch (_) { /* ignore */ }
-    console.log(...args);
-}
 
 const BASE_TIMEOUT_MS = 120000;
 const DEFAULT_STATUS_DURATION = 3;
@@ -642,7 +636,6 @@ async function movePlayerToDestination(
     { fallbackName = null, label = "move_location" } = {},
 ) {
     const player = context.player || eventsInstance.currentPlayer;
-    moveDebug(`[movePlayerToDestination] Called for "${destination}" (label: ${label}), player: ${player?.name || player?.id || 'unknown'}`);
 
     const enforceSinglePlayerMovePerTurn =
         !player?.isNPC && context?.allowAdditionalPlayerMoves !== true;
@@ -656,7 +649,6 @@ async function movePlayerToDestination(
         !Location ||
         typeof Location.get !== "function"
     ) {
-        moveDebug(`[movePlayerToDestination] Early return: missing deps (player=${!!player}, setLocation=${typeof player?.setLocation}, Location=${!!Location}, Location.get=${typeof Location?.get})`);
         throw new Error(
             `[${label}] Missing movement dependencies (player/setLocation/Location.get).`,
         );
@@ -696,7 +688,6 @@ async function movePlayerToDestination(
         } catch (_) {
             destinationObject = null;
         }
-        moveDebug(`[movePlayerToDestination] Location.get("${destinationName}"): ${destinationObject ? destinationObject.name : 'null'}`);
 
         if (!destinationObject && typeof Location.findByName === "function") {
             try {
@@ -704,16 +695,13 @@ async function movePlayerToDestination(
             } catch (_) {
                 destinationObject = null;
             }
-            moveDebug(`[movePlayerToDestination] Location.findByName("${destinationName}"): ${destinationObject ? destinationObject.name : 'null'}`);
         }
 
         if (!destinationObject) {
             destinationObject = findLocationByNameLoose(destinationName) || null;
-            moveDebug(`[movePlayerToDestination] findLocationByNameLoose("${destinationName}"): ${destinationObject ? destinationObject.name : 'null'}`);
         }
 
         if (!destinationObject) {
-            moveDebug(`[movePlayerToDestination] All lookups failed for "${destinationName}", attempting createLocationFromEvent`);
             let originLocation = context.location || null;
             if (!originLocation && player?.currentLocation) {
                 try {
@@ -753,11 +741,9 @@ async function movePlayerToDestination(
     // Destination-name de-dupe for repeated entries targeting the same place.
     // Cross-destination double moves are prevented by the Globals.processedMove guard above.
     if (trackingName && eventsInstance.movedLocations.has(trackingName)) {
-        moveDebug(`[movePlayerToDestination] Skipped: "${trackingName}" already in movedLocations`);
         return;
     }
 
-    moveDebug(`[movePlayerToDestination] Setting location: player "${player.name || player.id}" -> "${destinationObject.name}" (${destinationObject.id})`);
     const destinationId = destinationObject.id;
     player.setLocation(destinationObject.id);
     // setLocation may refuse unresolved ids; treat that as move failure so we do not emit
@@ -3707,7 +3693,6 @@ class Events {
                     .filter(Boolean),
             move_location: (raw) => {
                 if (Globals.processedMove) {
-                    moveDebug(`[move_location parser] Skipped: Globals.processedMove is true`);
                     return [];
                 }
                 const result = splitPipeList(raw)
@@ -3723,7 +3708,6 @@ class Events {
                         return normalizeArrowDelimiters(entry);
                     })
                     .filter(Boolean);
-                moveDebug(`[move_location parser] Raw: "${raw}" => Parsed: ${JSON.stringify(result)}`);
                 return result;
             },
             received_quest: (raw) => {
@@ -5880,48 +5864,6 @@ class Events {
                     return null;
                 };
 
-                if (Globals.processedMove) {
-                    const indexesToRemove = [];
-                    for (let index = 0; index < entries.length; index += 1) {
-                        const entry = entries[index];
-                        const normalizedName = normalizeString(entry?.name);
-                        const candidateIds = [
-                            typeof entry?.id === "string" ? entry.id.trim() : null,
-                            typeof entry?.npcId === "string" ? entry.npcId.trim() : null,
-                            typeof entry?.npcID === "string" ? entry.npcID.trim() : null,
-                            typeof entry?.actorId === "string" ? entry.actorId.trim() : null,
-                        ].filter(Boolean);
-
-                        let existingNpc = null;
-                        for (const candidateId of candidateIds) {
-                            existingNpc = resolveActorById(candidateId);
-                            if (existingNpc) {
-                                break;
-                            }
-                        }
-                        if (
-                            !existingNpc &&
-                            normalizedName &&
-                            typeof findActorByName === "function"
-                        ) {
-                            existingNpc = findActorByName(normalizedName) || null;
-                        }
-                        if (!existingNpc) {
-                            indexesToRemove.push(index);
-                        }
-                    }
-
-                    if (indexesToRemove.length) {
-                        for (let i = indexesToRemove.length - 1; i >= 0; i -= 1) {
-                            entries.splice(indexesToRemove[i], 1);
-                        }
-                    }
-
-                    if (!entries.length) {
-                        return;
-                    }
-                }
-
                 const collectPartyNames = (actor) => {
                     if (!actor) {
                         return;
@@ -7010,16 +6952,13 @@ class Events {
                 }
             },
             move_location: async function (entries = [], context = {}) {
-                moveDebug(`[move_location handler] Called with entries:`, JSON.stringify(entries));
                 if (!Array.isArray(entries) || !entries.length) {
-                    moveDebug(`[move_location handler] Skipped: no entries`);
                     return;
                 }
                 const destinationInput = entries[entries.length - 1];
                 const destinationName =
                     typeof destinationInput === "string" ? destinationInput.trim() : "";
                 if (!destinationName) {
-                    moveDebug(`[move_location handler] Skipped: empty destination name`);
                     return;
                 }
                 // De-dupe repeated move events for the same destination in a single turn.
@@ -7028,18 +6967,14 @@ class Events {
                 // Do not pre-add to movedLocations here; movePlayerToDestination records it
                 // only after a verified location write.
                 if (Events.movedLocations.has(destinationName)) {
-                    moveDebug(`[move_location handler] Skipped: "${destinationName}" already in movedLocations`);
                     return;
                 }
-                moveDebug(`[move_location handler] Moving to "${destinationName}"`);
                 try {
                     await movePlayerToDestination(this, destinationName, context, {
                         fallbackName: destinationName,
                         label: "move_location",
                     });
-                    moveDebug(`[move_location handler] Successfully moved to "${destinationName}"`);
                 } catch (error) {
-                    moveDebug(`[move_location handler] FAILED: ${error.message}`);
                     throw new Error(
                         `Failed to move player location to "${destinationName}": ${error.message}`,
                     );

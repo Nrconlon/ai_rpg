@@ -11364,6 +11364,11 @@ module.exports = function registerApiRoutes(scope) {
 
                         const renderedPrompt = promptEnv.render(templateName, promptVariables);
 
+                        if (renderedPrompt == null || (typeof renderedPrompt === 'string' && !renderedPrompt.trim())) {
+                            console.error(`🔴 promptEnv.render("${templateName}") returned ${renderedPrompt === null ? 'null' : renderedPrompt === undefined ? 'undefined' : 'empty string'}`);
+                            console.error(`🔴 promptType: ${promptVariables?.promptType}, keys: ${Object.keys(promptVariables || {}).join(', ')}`);
+                        }
+
                         const promptData = parseXMLTemplate(renderedPrompt);
 
                         if (typeof promptData.temperature === 'number') {
@@ -11954,6 +11959,7 @@ module.exports = function registerApiRoutes(scope) {
                             stream.status('player_action:event_checks', 'Evaluating resulting events.');
                             const shouldIncludePlayerActionForEventChecks = Boolean(
                                 plausibilityType === 'trivial'
+                                || plausibilityType === 'plausible'
                                 || actionResolution?.success === true
                             );
                             if (shouldIncludePlayerActionForEventChecks) {
