@@ -309,7 +309,7 @@ function splitPipeList(raw) {
         .split("|")
         .map((part) => part.trim())
         .filter(
-            (part) => part.length > 0 && !NO_EVENT_TOKENS.has(part.toLowerCase()),
+            (part) => part.length > 0 && !NO_EVENT_TOKENS.has(part.toLowerCase().replace(/[.!?]+$/, '')),
         );
 }
 
@@ -2459,7 +2459,7 @@ class Events {
                 .map((segment) => (typeof segment === "string" ? segment.trim() : ""))
                 .filter(
                     (segment) =>
-                        segment.length > 0 && !NO_EVENT_TOKENS.has(segment.toLowerCase()),
+                        segment.length > 0 && !NO_EVENT_TOKENS.has(segment.toLowerCase().replace(/[.!?]+$/, '')),
                 )
                 .join(" | ");
             rawEntries[key] = compactRaw;
@@ -2538,19 +2538,31 @@ class Events {
                 .map((name) => ({
                     name,
                     action: "arrived",
+                    destination: null,
                     scenePresence: true,
                 }));
 
-            const existingArrivalNames = new Set(
-                (parsedEntries.npc_arrival_departure || []).map((e) => e.name),
-            );
-            const newPresence = presenceArrivals.filter(
-                (e) => !existingArrivalNames.has(e.name),
+            if (!Array.isArray(parsedEntries.npc_arrival_departure)) {
+                parsedEntries.npc_arrival_departure = [];
+            }
+
+            const isMoving = (parsedEntries.move_new_location?.length > 0) || (parsedEntries.move_location?.length > 0);
+            const locationNames = isMoving ? [] : (Globals.location?.getNPCNames?.() || []);
+            const existingArrivalNames = SanitizedStringSet.fromArray(
+                parsedEntries.npc_arrival_departure.map((e) => e?.name || ""),
             );
 
-            if (newPresence.length) {
-                parsedEntries.npc_arrival_departure.push(...newPresence);
+            const uniquePresence = presenceArrivals.filter(
+                (entry) =>
+                    !locationNames.includes(entry.name) &&
+                    !existingArrivalNames.has(entry.name),
+            );
+
+            if (isMoving && uniquePresence.length) {
+                console.log(`[scene_presence] Folding ${uniquePresence.length} NPC(s) as arrivals during move: ${uniquePresence.map(e => e.name).join(', ')}`);
             }
+
+            parsedEntries.npc_arrival_departure.push(...uniquePresence);
         }
 
         this._trackItemsFromParsing(parsedEntries);

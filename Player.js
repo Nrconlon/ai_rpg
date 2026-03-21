@@ -4284,7 +4284,8 @@ class Player {
 
     getCurrentLocationName() {
         const Location = getLocationModule();
-        return Location.get(this.#currentLocation).name;
+        const loc = Location.get(this.#currentLocation);
+        return loc ? loc.name : null;
     }
 
     get currentLocationObject() {

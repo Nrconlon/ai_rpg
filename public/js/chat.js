@@ -1148,6 +1148,13 @@ class AIRPGChat {
             }
         });
 
+        const existingPromptProgress = (this.promptProgressMessage && this.promptProgressMessage.parentNode === this.chatLog)
+            ? this.promptProgressMessage
+            : null;
+        if (existingPromptProgress) {
+            existingPromptProgress.remove();
+        }
+
         this.chatLog.innerHTML = '';
         if (fragment.childNodes.length === 0) {
             const placeholder = document.createElement('div');

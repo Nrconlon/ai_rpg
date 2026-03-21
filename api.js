@@ -10346,6 +10346,14 @@ module.exports = function registerApiRoutes(scope) {
                 return res.status(500).json({ error: 'Failed to retrieve player location. You need to start or load a game first.' });
             }
 
+            if (!initialPlayerLocationId || !initialPlayerLocationName) {
+                return res.status(500).json({ error: 'Failed to retrieve player location. You need to start or load a game first.' });
+            }
+
+            if (!initialPlayerLocationId || !initialPlayerLocationName) {
+                return res.status(500).json({ error: 'Failed to retrieve player location. You need to start or load a game first.' });
+            }
+
             let locationMemoriesProcessed = false;
             let currentActionIsTravel = false;
             let previousActionWasTravel = false;
@@ -11361,6 +11369,11 @@ module.exports = function registerApiRoutes(scope) {
                         }
 
                         const renderedPrompt = promptEnv.render(templateName, promptVariables);
+
+                        if (renderedPrompt == null || (typeof renderedPrompt === 'string' && !renderedPrompt.trim())) {
+                            console.error(`promptEnv.render("${templateName}") returned ${renderedPrompt === null ? 'null' : renderedPrompt === undefined ? 'undefined' : 'empty string'}`);
+                            console.error(`promptType: ${promptVariables?.promptType}, keys: ${Object.keys(promptVariables || {}).join(', ')}`);
+                        }
 
                         const promptData = parseXMLTemplate(renderedPrompt);
 

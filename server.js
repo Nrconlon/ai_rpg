@@ -3455,11 +3455,21 @@ function buildReservedActorNameSet() {
     if (players instanceof Map) {
         for (const actor of players.values()) {
             addName(actor?.name);
+            if (typeof actor?.getAliases === 'function') {
+                for (const alias of actor.getAliases()) {
+                    addName(alias);
+                }
+            }
         }
     }
 
     for (const actor of Player.getAll()) {
         addName(actor?.name);
+        if (typeof actor?.getAliases === 'function') {
+            for (const alias of actor.getAliases()) {
+                addName(alias);
+            }
+        }
     }
 
     if (currentPlayer && typeof currentPlayer.getPartyMembers === 'function') {
@@ -3799,6 +3809,10 @@ function pruneAndDecrementStatusEffects(entity) {
 
 function tickStatusEffectsForAction({ player = currentPlayer, location = null } = {}) {
     if (!player) {
+        return { location: null, region: null };
+    }
+
+    if (config.linger_mode) {
         return { location: null, region: null };
     }
 
@@ -9982,6 +9996,37 @@ const imagePromptEnv = nunjucks.configure('imagegen', {
     autoescape: false
 });
 
+// Monkey-patch Nunjucks Template._compile to log template source on parse errors
+const _origCompile = nunjucks.Template.prototype._compile;
+nunjucks.Template.prototype._compile = function _compilePatched() {
+    try {
+        return _origCompile.call(this);
+    } catch (err) {
+        const src = typeof this.tmplStr === 'string' ? this.tmplStr : String(this.tmplStr ?? '');
+        const lines = src.split('\n');
+
+        const ifLines = [];
+        const endifLines = [];
+        for (let i = 0; i < lines.length; i++) {
+            if (/\{%[-\s]*if\s/.test(lines[i])) ifLines.push(i + 1);
+            if (/\{%[-\s]*endif/.test(lines[i])) endifLines.push(i + 1);
+        }
+
+        console.error(`\nNunjucks compile error for template "${this.path || '(inline)'}": ${err.message}`);
+        console.error(`Template length: ${src.length} chars, ${lines.length} lines`);
+        console.error(`{% if %} on lines: [${ifLines.join(', ')}]  (${ifLines.length} total)`);
+        console.error(`{% endif %} on lines: [${endifLines.join(', ')}]  (${endifLines.length} total)`);
+        if (ifLines.length !== endifLines.length) {
+            console.error(`MISMATCH: ${ifLines.length} ifs vs ${endifLines.length} endifs`);
+        }
+
+        const tail = lines.slice(-30).map((l, i) => `  ${lines.length - 30 + i + 1}: ${l}`).join('\n');
+        console.error(`Last 30 lines of template:\n${tail}\n`);
+
+        throw err;
+    }
+};
+
 // Import and add dice filters to both environments
 const diceModule = require('./nunjucks_dice.js');
 const e = require('express');
@@ -14475,7 +14520,24 @@ function applyNpcAliases(npc, aliases = []) {
     if (typeof npc.setAliases !== 'function') {
         return;
     }
-    npc.setAliases(Array.isArray(aliases) ? aliases : []);
+    let filteredAliases = Array.isArray(aliases) ? aliases : [];
+
+    if (filteredAliases.length) {
+        try {
+            const reserved = buildReservedActorNameSet();
+            filteredAliases = filteredAliases.filter(alias => {
+                if (reserved.has(alias)) {
+                    console.log(`Dropping alias "${alias}" for ${npc.name} — collides with existing name/alias`);
+                    return false;
+                }
+                return true;
+            });
+        } catch (error) {
+            console.warn('Failed to check alias collisions:', error?.message);
+        }
+    }
+
+    npc.setAliases(filteredAliases);
 }
 
 function buildLevelUpSummaryForCharacter(character, { previousLevel = null } = {}) {
