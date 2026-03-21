@@ -78,7 +78,7 @@ const EVENT_PROMPT_ORDER = [
         },
         {
             key: "alter_item",
-            prompt: `Was an item or piece of scenery in the scene or any inventory PERMANENTLY altered in any way (e.g., upgraded, modified, enchanted, broken, filled with items, etc.)? If so, answer in the format "[exact item name] -> [new item name or same item name] -> [1 sentence description of alteration]". If multiple items were altered, separate multiple entries with vertical bars. If it doesn't make sense for the name to change, use the same name for new item name. Note that if a meaningful fraction of an an object was consumed (a slice of cake, but not a single piece of wood from a large pile), this is considered an alteration. If the *entire* thing was consumed, this is considered completely consumed and not alteration. Being given, taken, worn, equipped, removed, dropped, etc, is not considered an alteration.`,
+            prompt: `Was an item or piece of scenery in the scene or any inventory PERMANENTLY altered in any way (e.g., upgraded, modified, enchanted, broken, filled with items, etc.)? If so, answer in the format "[exact item name] -> [new item name or same item name] -> [1 sentence description of alteration]". If multiple items were altered, separate multiple entries with vertical bars. If it doesn't make sense for the name to change, use the same name for new item name. Note that if any portion of a consumable item was used (a dose, drop, sip, bite, or any fraction — e.g., a vial of syrup after taking a drop, a potion after drinking some), this is considered an alteration. If the *entire* thing was consumed, it is completely consumed and NOT an alteration. Being given, taken, worn, equipped, removed, dropped, etc, is not considered an alteration.`,
         },
         {
             key: "consume_item",
@@ -98,7 +98,7 @@ const EVENT_PROMPT_ORDER = [
         },
         {
             key: "item_appear",
-            prompt: `Did any new inanimate items appear in the scene for the first time, either as newly created items or items that were mentioned as already existing but had not been previously described in the scene context? If so, list them in the format format as "[exact item name] -> [description]" with multiple items separated by vertical bars. Otherwise, answer N/A. Note that even if an item was crafted with multiple ingredients, it should only be listed once here as a new item.`,
+            prompt: `Did any brand new inanimate items appear in the scene — items that do not already exist anywhere in the game state above (not in any character's inventory, not in itemsInScene, not in sceneryList)? Items being pulled out, shown, handled, or retrieved from a character's existing inventory are NOT new items. Only list items that are genuinely created or introduced for the first time and have no match in the existing game state. If so, list them in the format "[exact item name] -> [description]" with multiple items separated by vertical bars. Otherwise, answer N/A. Note that even if an item was crafted with multiple ingredients, it should only be listed once here as a new item.`,
         },
         {
             key: "drop_item",
@@ -129,7 +129,7 @@ const EVENT_PROMPT_ORDER = [
         },
         {
             key: "status_effect_change",
-            prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) gain or lose any temporary status effects that you didn't list above as permanent changes? If so, list them in this format: "[exact entity name] -> [10 or fewer word description of effect] -> [gained/lost] [-> integer status effect level, if gained]". If there are multiple entries, separate them with vertical bars. Otherwise answer N/A.  Don't use redundant wording in the status effect description. We already know if the status is gained or lost, so just say 'Bob -> drunk -> gained -> 5' or 'Bob -> drunk -> lost'. When losing a status effect, use the exact name listed with the character XML. The status effect level should generally be the level of the cause of the status effect, be it an item or character. If the effect isn't from an item or a result of something a character did, just use the location level.`,
+            prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) gain or lose any temporary status effects that you didn't list above as permanent changes? Do NOT report a status effect that the entity already has listed in their status effects in the context above — only report genuinely new effects or effects being lost. If so, list them in this format: "[exact entity name] -> [10 or fewer word description of effect] -> [gained/lost] [-> integer status effect level, if gained]". If there are multiple entries, separate them with vertical bars. Otherwise answer N/A.  Don't use redundant wording in the status effect description. We already know if the status is gained or lost, so just say 'Bob -> drunk -> gained -> 5' or 'Bob -> drunk -> lost'. When losing a status effect, use the exact name listed with the character XML. The status effect level should generally be the level of the cause of the status effect, be it an item or character. If the effect isn't from an item or a result of something a character did, just use the location level.`,
         },
         {
             key: "npc_arrival_departure",
@@ -151,6 +151,10 @@ const EVENT_PROMPT_ORDER = [
         {
             key: "npc_first_appearance",
             prompt: `List all physically present entities (NPCs, animals, monsters, robots, etc.) that acted (interacted with the player, spoke, or did anything else) in textToCheck which aren't already listed in your answers above, in the player's party, or in the list of present entities. Separate entries with vertical bars. DO NOT include entites that are not present (mentioned in conversation, on the telephone, on a TV, in a crystal ball, or whatever), even if they are able to communicate with people at the location. For instance, "Android 609|Bob|Dire Wolf". If none, answer N/A.`,
+        },
+        {
+            key: "npc_scene_presence",
+            prompt: `Which named animate entities (NPCs, creatures, etc.) are physically present at this location during textToCheck? List all of them, whether or not they appear in the NPC context above. Use their exact names, separated by vertical bars. Do not include the player. Do not include entities merely mentioned in dialogue or thought — only those physically in the scene. If none, answer N/A.`,
         },
         {
             key: "party_change",
@@ -2514,12 +2518,38 @@ class Events {
 
                 // Check if the NPC already exists and is in this location (see Player.js and Location.js)
                 // so we can avoid redundant arrivals
-                const existingNames = Globals.location.getNPCNames();
+                const existingNames = Globals.location?.getNPCNames?.() || [];
                 const uniqueArrivals = arrivals.filter(
                     (entry) => !existingNames.includes(entry.name),
                 );
 
                 parsedEntries.npc_arrival_departure.push(...uniqueArrivals);
+            }
+        }
+
+        // Fold scene-presence into arrivals for existing NPCs not already at the location.
+        // This catches NPCs depicted as "already here" in the narrative who aren't tracked
+        // at this location in the game state (e.g. after a location transition).
+        const scenePresence = parsedEntries.npc_scene_presence || [];
+        if (scenePresence.length) {
+            const presenceArrivals = scenePresence
+                .map((name) => normalizeString(name))
+                .filter((name) => name.length > 0)
+                .map((name) => ({
+                    name,
+                    action: "arrived",
+                    scenePresence: true,
+                }));
+
+            const existingArrivalNames = new Set(
+                (parsedEntries.npc_arrival_departure || []).map((e) => e.name),
+            );
+            const newPresence = presenceArrivals.filter(
+                (e) => !existingArrivalNames.has(e.name),
+            );
+
+            if (newPresence.length) {
+                parsedEntries.npc_arrival_departure.push(...newPresence);
             }
         }
 
@@ -3390,6 +3420,15 @@ class Events {
             npc_first_appearance: (raw) =>
                 splitPipeList(raw)
                     .map((entry) => stripAfterFirstArrow(entry))
+                    .filter(Boolean),
+            npc_scene_presence: (raw) =>
+                splitPipeList(raw)
+                    .map((entry) => {
+                        if (typeof entry !== "string") return "";
+                        const arrowIndex = entry.indexOf("->");
+                        const sliced = arrowIndex >= 0 ? entry.slice(0, arrowIndex) : entry;
+                        return sliced.trim();
+                    })
                     .filter(Boolean),
             party_change: (raw) =>
                 splitPipeList(raw)
@@ -5206,6 +5245,24 @@ class Events {
                             if (outcome.thing.thingType === "scenery") {
                                 thing.drop();
                             }
+
+                            // Apply causeStatusEffectOnTarget if item has one (e.g., partial consumption of a potion/syrup)
+                            const targetEffect = thing.causeStatusEffectOnTarget
+                                || thing.metadata?.causeStatusEffectOnTarget
+                                || (thing.causeStatusEffect?.applyToTarget ? thing.causeStatusEffect : null);
+                            if (targetEffect) {
+                                const consumer = context.player || this.currentPlayer;
+                                if (consumer && typeof consumer.addStatusEffect === "function") {
+                                    try {
+                                        const applied = consumer.addStatusEffect(targetEffect, targetEffect.duration ?? 1);
+                                        if (applied) {
+                                            console.debug(`[alter_item] Applied status effect "${applied.name || applied.description || 'Unknown'}" to ${consumer.name || 'consumer'} from "${thing.name || originalName}".`);
+                                        }
+                                    } catch (err) {
+                                        console.error(`[alter_item] Error applying status effect from "${thing.name || originalName}":`, err.message);
+                                    }
+                                }
+                            }
                         })(),
                     );
                 }
@@ -5870,17 +5927,29 @@ class Events {
                     }
 
                     let finalizedName = originalName;
+                    const isScenePresence = Boolean(entry?.scenePresence);
                     if (action === "arrived" || isFirstAppearance) {
-                        try {
-                            const ensuredNpc = await ensureNpcByName(originalName, context);
-                            if (ensuredNpc && typeof ensuredNpc.name === "string") {
-                                const trimmed = ensuredNpc.name.trim();
-                                if (trimmed) {
-                                    finalizedName = trimmed;
-                                }
+                        if (isScenePresence) {
+                            // Scene-presence entries only move existing NPCs — never create new ones.
+                            const existing = findActorByName?.(originalName);
+                            if (existing && typeof existing.name === "string") {
+                                finalizedName = existing.name.trim() || originalName;
+                            } else {
+                                suppressedIndexes.add(index);
+                                continue;
                             }
-                        } catch (error) {
-                            console.warn("Failed to ensure NPC arrival:", error.message);
+                        } else {
+                            try {
+                                const ensuredNpc = await ensureNpcByName(originalName, context);
+                                if (ensuredNpc && typeof ensuredNpc.name === "string") {
+                                    const trimmed = ensuredNpc.name.trim();
+                                    if (trimmed) {
+                                        finalizedName = trimmed;
+                                    }
+                                }
+                            } catch (error) {
+                                console.warn("Failed to ensure NPC arrival:", error.message);
+                            }
                         }
                     }
 
