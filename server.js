@@ -24512,6 +24512,7 @@ const apiScope = {
     imageFileExists,
     realtimeHub,
     addJobSubscriber,
+    generateImagePromptFromTemplate,
 
 };
 
@@ -24531,6 +24532,17 @@ defineApiStateProperty('comfyUIClient', () => comfyUIClient, value => { comfyUIC
 defineApiStateProperty('chatHistory', () => chatHistory, value => { chatHistory = value; });
 defineApiStateProperty('isProcessingJob', () => isProcessingJob, value => { isProcessingJob = value; });
 defineApiStateProperty('currentTurnToken', () => currentTurnToken, value => { currentTurnToken = value; });
+
+// Linger mode runtime toggle (in-memory only, not persisted to config.yaml)
+app.get('/api/linger-mode', (req, res) => {
+    res.json({ enabled: !!config.linger_mode });
+});
+
+app.post('/api/linger-mode', (req, res) => {
+    const { enabled } = req.body || {};
+    config.linger_mode = !!enabled;
+    res.json({ success: true, enabled: config.linger_mode });
+});
 
 const registerApiRoutes = require('./api');
 registerApiRoutes(apiScope);

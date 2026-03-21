@@ -1109,6 +1109,33 @@ p:not(:last-child) {
   margin-bottom: 12px;
 }
 
+.tab-bar-spacer {
+  flex: 1;
+}
+
+.tab-toggle {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, border 0.2s ease, color 0.2s ease;
+  font-size: inherit;
+}
+
+.tab-toggle:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.tab-toggle[aria-pressed="true"] {
+  background: rgba(76, 175, 80, 0.3);
+  border-color: rgba(76, 175, 80, 0.6);
+  color: #81c784;
+}
+
 .tab-button {
   background: rgba(255, 255, 255, 0.15);
   color: $white;

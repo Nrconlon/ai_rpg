@@ -1741,6 +1741,23 @@ class AIRPGChat {
             this.handleDeleteMessage(entry);
         });
 
+        const copyButton = document.createElement('button');
+        copyButton.type = 'button';
+        copyButton.className = 'message-action message-action--copy';
+        copyButton.title = 'Copy message';
+        copyButton.setAttribute('aria-label', 'Copy message');
+        copyButton.textContent = '📋';
+        copyButton.addEventListener('click', async () => {
+            try {
+                await navigator.clipboard.writeText(entry.content || '');
+                copyButton.textContent = '✅';
+                setTimeout(() => { copyButton.textContent = '📋'; }, 1500);
+            } catch (err) {
+                console.error('Copy failed:', err);
+            }
+        });
+
+        wrapper.appendChild(copyButton);
         wrapper.appendChild(editButton);
         wrapper.appendChild(deleteButton);
         return wrapper;

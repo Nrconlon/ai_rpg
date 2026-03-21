@@ -124,6 +124,10 @@ const EVENT_PROMPT_ORDER = [
             prompt: `Were any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) physically changed permanently in any way, such as being transformed, upgraded, downgraded, enhanced, damaged, repaired, healed, modified, or otherwise physically altered in a significant way, by anything other than damage from an attack? If so, answer in the format "[exact character name] -> [injury|status effect|gear|attire|mental change|temporary physical change|physical transformation] -> [1-2 sentence description of the change]". If multiple characters were altered, separate multiple entries with vertical bars. Note that things like temporary magical polymorphs and being turned to stone (where it's possible that it may be reversed) are better expressed as status effects and should not be mentioned here. If no characters were altered (which will be the case most of the time), answer N/A.`,
         },
         {
+            key: "npc_ability_change",
+            prompt: `Did any animate entity (NPC, animal, monster, robot, etc.) demonstrate a notable capability, power, or skill through action that is NOT already listed in their abilities? Or did an existing ability visibly change, evolve, or manifest differently than its current description? Only include capabilities demonstrated through action in the text, not merely mentioned or threatened. The capability must be consistent with the entity's race, class, and description. Prefer "update" using the existing ability name whenever the demonstrated capability is related to, a variation of, or could fall under an ability already listed for that entity. For example, a dragon spitting a fire bolt should update an existing "Fire Breath" ability, not create a new one. Only use "new" when the capability is truly distinct from all of the entity's existing abilities. If so, list in the format "[exact character name] -> [new|update] -> [ability name] -> [Active|Passive|Triggered] -> [1-2 sentence description of the ability as demonstrated]". Separate multiple entries with vertical bars. Otherwise, answer N/A.`,
+        },
+        {
             key: "status_effect_change",
             prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) gain or lose any temporary status effects that you didn't list above as permanent changes? If so, list them in this format: "[exact entity name] -> [10 or fewer word description of effect] -> [gained/lost] [-> integer status effect level, if gained]". If there are multiple entries, separate them with vertical bars. Otherwise answer N/A.  Don't use redundant wording in the status effect description. We already know if the status is gained or lost, so just say 'Bob -> drunk -> gained -> 5' or 'Bob -> drunk -> lost'. When losing a status effect, use the exact name listed with the character XML. The status effect level should generally be the level of the cause of the status effect, be it an item or character. If the effect isn't from an item or a result of something a character did, just use the location level.`,
         },
@@ -458,6 +462,11 @@ async function applyExitDiscovery(
             } catch (_) {
                 destination = null;
             }
+        }
+
+        // Discovery-only: don't pre-spawn stub locations. They'll be created when the player actually travels there.
+        if (!destination && !movePlayer) {
+            continue;
         }
 
         const isRegion = entry?.kind === "region";
@@ -2484,7 +2493,7 @@ class Events {
         }
 
         if (
-            parsedEntries.new_exit_discovered.length === 0 &&
+            parsedEntries.move_new_location.length === 0 &&
             parsedEntries.move_location.length === 0
         ) {
             const firstAppearance = parsedEntries.npc_first_appearance || [];
@@ -3287,6 +3296,30 @@ class Events {
                         return {
                             name: name.trim(),
                             description: description ? description.trim() : null,
+                        };
+                    })
+                    .filter(Boolean),
+            npc_ability_change: (raw) =>
+                splitPipeList(raw)
+                    .map((entry) => {
+                        const parts = splitArrowParts(entry, 5);
+                        if (parts.length < 5) {
+                            return null;
+                        }
+                        const name = parts[0];
+                        const action = parts[1];
+                        const abilityName = parts[2];
+                        const abilityType = parts[3];
+                        const description = parts[4];
+                        if (!name || !abilityName) {
+                            return null;
+                        }
+                        return {
+                            name: name.trim(),
+                            action: (action || "new").trim().toLowerCase(),
+                            abilityName: abilityName.trim(),
+                            abilityType: (abilityType || "Active").trim(),
+                            description: (description || "").trim(),
                         };
                     })
                     .filter(Boolean),
@@ -4831,7 +4864,7 @@ class Events {
                 if (!Array.isArray(items) || !items.length) {
                     return;
                 }
-                const { findThingByName } = this._deps;
+                const { findThingByName, findActorByName } = this._deps;
                 if (typeof findThingByName !== "function") {
                     throw new Error(
                         "consume_item handler requires findThingByName dependency.",
@@ -4857,6 +4890,24 @@ class Events {
                     } else {
                         console.debug(`[consume_item] Consuming item "${itemName}".`);
                     }
+                    // Apply causeStatusEffectOnTarget before removing the item
+                    const targetEffect = item.causeStatusEffectOnTarget || item.metadata?.causeStatusEffectOnTarget || null;
+                    if (targetEffect) {
+                        const consumerName = typeof entry === "object" && entry.user ? String(entry.user).trim() : null;
+                        const consumer = (consumerName && typeof findActorByName === "function" ? findActorByName(consumerName) : null)
+                            || context.player || this.currentPlayer;
+                        if (consumer && typeof consumer.addStatusEffect === "function") {
+                            try {
+                                const applied = consumer.addStatusEffect(targetEffect, targetEffect.duration ?? 1);
+                                if (applied) {
+                                    console.log(`[consume_item] Applied status effect from "${itemName}" to ${consumer.name || consumer.id}`);
+                                }
+                            } catch (err) {
+                                console.error(`[consume_item] Error applying status effect from "${itemName}":`, err.message);
+                            }
+                        }
+                    }
+
                     this._removeItemFromInventories(item);
                     this._detachThingFromWorld(item);
                     this.destroyedItems.add(itemName);
@@ -6319,6 +6370,110 @@ class Events {
                 entries.length = 0;
                 if (filteredEntries.length) {
                     entries.push(...filteredEntries);
+                }
+            },
+            npc_ability_change: async function (entries = [], context = {}) {
+                if (!Array.isArray(entries) || !entries.length) {
+                    return;
+                }
+                const { findActorByName } = this._deps;
+
+                for (const entry of entries) {
+                    const npc = findActorByName(entry.name);
+                    if (!npc || !npc.isNPC) {
+                        continue;
+                    }
+
+                    const abilities = npc.getAbilities();
+                    const lowerAbilityName = entry.abilityName.toLowerCase();
+
+                    // 1) Exact match (case-insensitive)
+                    let existingIndex = abilities.findIndex(
+                        (a) => a.name.toLowerCase() === lowerAbilityName,
+                    );
+
+                    // 2) Fuzzy match: substring or significant word overlap
+                    if (existingIndex === -1) {
+                        const entryWords = lowerAbilityName
+                            .split(/\s+/)
+                            .filter((w) => w.length > 2);
+                        let bestScore = 0;
+                        let bestIndex = -1;
+
+                        for (let i = 0; i < abilities.length; i++) {
+                            const existingLower =
+                                abilities[i].name.toLowerCase();
+
+                            // Substring match (either direction)
+                            if (
+                                existingLower.includes(lowerAbilityName) ||
+                                lowerAbilityName.includes(existingLower)
+                            ) {
+                                bestIndex = i;
+                                break;
+                            }
+
+                            // Word overlap (partial word matches via includes)
+                            const existingWords = existingLower
+                                .split(/\s+/)
+                                .filter((w) => w.length > 2);
+                            const overlap = entryWords.filter((w) =>
+                                existingWords.some(
+                                    (ew) => ew.includes(w) || w.includes(ew),
+                                ),
+                            ).length;
+                            const minWords = Math.min(
+                                entryWords.length,
+                                existingWords.length,
+                            );
+                            if (
+                                minWords > 0 &&
+                                overlap / minWords > 0.5 &&
+                                overlap > bestScore
+                            ) {
+                                bestScore = overlap;
+                                bestIndex = i;
+                            }
+                        }
+
+                        if (bestIndex !== -1) {
+                            existingIndex = bestIndex;
+                            console.log(
+                                `[npc_ability_change] Fuzzy matched "${entry.abilityName}" to existing "${abilities[bestIndex].name}" for ${npc.name}`,
+                            );
+                        }
+                    }
+
+                    if (existingIndex !== -1) {
+                        // Update existing ability
+                        abilities[existingIndex].description =
+                            entry.description;
+                        abilities[existingIndex].shortDescription = entry
+                            .description
+                            .split(/\s+/)
+                            .slice(0, 10)
+                            .join(" ");
+                        abilities[existingIndex].type = entry.abilityType;
+                        npc.setAbilities(abilities);
+                        console.log(
+                            `[npc_ability_change] Updated ability "${abilities[existingIndex].name}" for ${npc.name}`,
+                        );
+                    } else {
+                        // Truly new ability
+                        npc.addAbility({
+                            name: entry.abilityName,
+                            description: entry.description,
+                            shortDescription: entry.description
+                                .split(/\s+/)
+                                .slice(0, 10)
+                                .join(" "),
+                            type: entry.abilityType,
+                            level: npc.level || 1,
+                        });
+                        console.log(
+                            `[npc_ability_change] Added new ability "${entry.abilityName}" for ${npc.name}`,
+                        );
+                    }
                 }
             },
             status_effect_change: async function (entries = [], context = {}) {
