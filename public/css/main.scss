@@ -2870,6 +2870,7 @@ body.dark .thing-toggle-hint {
 }
 
 .world-time-indicator {
+  position: relative;
   margin: 0 0 12px;
   display: flex;
   flex-direction: column;
@@ -2928,6 +2929,116 @@ body.dark .thing-toggle-hint {
 
 .world-time-indicator__weather[hidden] {
   display: none;
+}
+
+.world-time-edit-button {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease, background 0.18s ease;
+  background: rgba(59, 130, 246, 0.18);
+  border: 1px solid rgba(147, 197, 253, 0.45);
+  color: #bfdbfe;
+  padding: 0;
+  line-height: 1;
+
+  &:hover,
+  &:focus {
+    background: rgba(59, 130, 246, 0.35);
+    border-color: rgba(191, 219, 254, 0.65);
+    color: #e0f2fe;
+    outline: none;
+  }
+}
+
+.world-time-indicator:hover .world-time-edit-button,
+.world-time-edit-button:focus {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.world-time-edit-panel {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.world-time-edit-panel[hidden] {
+  display: none;
+}
+
+.world-time-edit-panel__label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.69rem;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.world-time-edit-panel__input {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 6px;
+  font-size: 0.72rem;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.3);
+  color: rgba(255, 255, 255, 0.95);
+  outline: none;
+
+  &:focus {
+    border-color: rgba(129, 140, 248, 0.6);
+  }
+}
+
+.world-time-edit-panel__actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.world-time-edit-panel__btn {
+  padding: 3px 10px;
+  font-size: 0.69rem;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.world-time-edit-panel__btn--save {
+  background: rgba(59, 130, 246, 0.3);
+  border-color: rgba(147, 197, 253, 0.45);
+  color: #bfdbfe;
+
+  &:hover {
+    background: rgba(59, 130, 246, 0.5);
+    border-color: rgba(191, 219, 254, 0.65);
+  }
+}
+
+.world-time-edit-panel__btn--cancel {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.7);
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.15);
+  }
 }
 
 .abilities-grid {

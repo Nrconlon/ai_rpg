@@ -38,11 +38,26 @@
                         <div class="location-block">
                             <div class="container">
                                 <div class="world-time-indicator world-time-indicator--sidebar" id="worldTimeIndicator" hidden aria-live="polite">
+                                    <button class="world-time-edit-button" id="worldTimeEditButton" type="button" aria-label="Edit world time" title="Edit world time">✏️</button>
                                     <span class="world-time-indicator__time" id="worldTimeIndicatorTime">--:--</span>
                                     <span class="world-time-indicator__date" id="worldTimeIndicatorDate">Unknown date</span>
                                     <span class="world-time-indicator__meta" id="worldTimeIndicatorMeta">Unknown segment · Unknown season</span>
                                     <span class="world-time-indicator__meta" id="worldTimeIndicatorLightLevel" hidden>Unknown light level</span>
                                     <span class="world-time-indicator__weather" id="worldTimeIndicatorWeather" hidden>Weather: Unknown</span>
+                                    <div class="world-time-edit-panel" id="worldTimeEditPanel" hidden>
+                                        <label class="world-time-edit-panel__label">
+                                            Time
+                                            <input type="text" id="worldTimeEditTime" class="world-time-edit-panel__input" placeholder="14:30 or 2:30pm">
+                                        </label>
+                                        <label class="world-time-edit-panel__label">
+                                            Day
+                                            <input type="number" id="worldTimeEditDay" class="world-time-edit-panel__input" min="0" step="1">
+                                        </label>
+                                        <div class="world-time-edit-panel__actions">
+                                            <button type="button" id="worldTimeEditSave" class="world-time-edit-panel__btn world-time-edit-panel__btn--save">Save</button>
+                                            <button type="button" id="worldTimeEditCancel" class="world-time-edit-panel__btn world-time-edit-panel__btn--cancel">Cancel</button>
+                                        </div>
+                                    </div>
                                 </div>
                                 <div class="location-header">
                                     <h4><span id="locationNameIcon" class="location-name-icon" aria-hidden="true">📍</span> <span class="location-name" id="locationName">Unknown Location</span></h4>
@@ -1880,6 +1895,7 @@
             initPartyDisplay();
             initStoryToolsPanel();
             initLingerModeToggle();
+            initWorldTimeEditPanel();
             await maybePromptSummaryStyle();
         });
 
@@ -15320,6 +15336,153 @@
                 activateTab(defaultTab);
                 window.location.hash = `#${hashPrefix}${defaultTab}`;
             }
+        }
+
+        function initWorldTimeEditPanel() {
+            const indicator = document.getElementById('worldTimeIndicator');
+            const editBtn = document.getElementById('worldTimeEditButton');
+            const panel = document.getElementById('worldTimeEditPanel');
+            const timeInput = document.getElementById('worldTimeEditTime');
+            const dayInput = document.getElementById('worldTimeEditDay');
+            const saveBtn = document.getElementById('worldTimeEditSave');
+            const cancelBtn = document.getElementById('worldTimeEditCancel');
+            if (!indicator || !editBtn || !panel || !timeInput || !dayInput || !saveBtn || !cancelBtn) return;
+
+            function minutesToHHMM(totalMinutes) {
+                const m = Number(totalMinutes);
+                if (!Number.isFinite(m) || m < 0) return '';
+                const h = Math.floor(m / 60);
+                const mm = String(m % 60).padStart(2, '0');
+                return `${h}:${mm}`;
+            }
+
+            function parseTimeString(raw) {
+                if (typeof raw !== 'string') return null;
+                const trimmed = raw.trim().toLowerCase();
+                if (!trimmed) return null;
+                const clockMatch = trimmed.match(/^(\d{1,2}):(\d{2})\s*(am|pm)?$/);
+                if (clockMatch) {
+                    let hours = parseInt(clockMatch[1], 10);
+                    const minutes = parseInt(clockMatch[2], 10);
+                    const meridiem = clockMatch[3] || null;
+                    if (meridiem === 'pm' && hours < 12) hours += 12;
+                    else if (meridiem === 'am' && hours === 12) hours = 0;
+                    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+                    return (hours * 60) + minutes;
+                }
+                if (/^\d+$/.test(trimmed)) {
+                    const value = parseInt(trimmed, 10);
+                    return value >= 0 ? value : null;
+                }
+                return null;
+            }
+
+            function openPanel() {
+                const mins = indicator.dataset.timeMinutes;
+                const day = indicator.dataset.dayIndex;
+                timeInput.value = mins !== '' && mins !== undefined ? minutesToHHMM(mins) : '';
+                dayInput.value = day !== '' && day !== undefined ? day : '';
+                panel.removeAttribute('hidden');
+                timeInput.focus();
+            }
+
+            function closePanel() {
+                panel.setAttribute('hidden', '');
+            }
+
+            editBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (panel.hasAttribute('hidden')) {
+                    openPanel();
+                } else {
+                    closePanel();
+                }
+            });
+
+            cancelBtn.addEventListener('click', () => closePanel());
+
+            saveBtn.addEventListener('click', async () => {
+                const body = {};
+                const timeVal = timeInput.value.trim();
+                const dayVal = dayInput.value.trim();
+
+                if (timeVal) {
+                    const parsed = parseTimeString(timeVal);
+                    if (parsed === null) {
+                        timeInput.focus();
+                        return;
+                    }
+                    body.timeMinutes = parsed;
+                }
+
+                if (dayVal !== '') {
+                    const parsed = parseInt(dayVal, 10);
+                    if (!Number.isFinite(parsed) || parsed < 0) {
+                        dayInput.focus();
+                        return;
+                    }
+                    body.dayIndex = parsed;
+                }
+
+                if (!Object.keys(body).length) {
+                    closePanel();
+                    return;
+                }
+
+                try {
+                    const resp = await fetch('/api/world-time', {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(body)
+                    });
+                    const data = await resp.json();
+                    if (data.success && data.worldTime) {
+                        const wt = data.worldTime;
+                        const timeEl = document.getElementById('worldTimeIndicatorTime');
+                        const dateEl = document.getElementById('worldTimeIndicatorDate');
+                        const metaEl = document.getElementById('worldTimeIndicatorMeta');
+                        const lightEl = document.getElementById('worldTimeIndicatorLightLevel');
+                        const weatherEl = document.getElementById('worldTimeIndicatorWeather');
+                        if (timeEl) timeEl.textContent = wt.timeLabel || '--:--';
+                        if (dateEl) dateEl.textContent = wt.dateLabel || 'Unknown date';
+                        if (metaEl) {
+                            const seg = wt.segment || 'Unknown segment';
+                            const sea = wt.season || 'Unknown season';
+                            metaEl.textContent = `${seg} · ${sea}`;
+                        }
+                        if (lightEl) {
+                            const light = wt.lightLevelDescription || wt.lighting || '';
+                            if (light) {
+                                lightEl.textContent = light;
+                                lightEl.removeAttribute('hidden');
+                            } else {
+                                lightEl.textContent = '';
+                                lightEl.setAttribute('hidden', '');
+                            }
+                        }
+                        if (weatherEl) {
+                            const weather = wt.weatherName && wt.weatherName.toLowerCase() !== 'no local weather' ? wt.weatherName : '';
+                            if (weather) {
+                                weatherEl.textContent = `Weather: ${weather}`;
+                                weatherEl.removeAttribute('hidden');
+                            } else {
+                                weatherEl.textContent = '';
+                                weatherEl.setAttribute('hidden', '');
+                            }
+                        }
+                        indicator.dataset.dayIndex = wt.dayIndex ?? '';
+                        indicator.dataset.timeMinutes = wt.timeMinutes ?? '';
+                    }
+                    closePanel();
+                } catch (err) {
+                    console.error('Failed to update world time:', err);
+                }
+            });
+
+            panel.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') closePanel();
+                if (e.key === 'Enter') saveBtn.click();
+            });
         }
 
         function initLingerModeToggle() {

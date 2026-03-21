@@ -27167,6 +27167,42 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        app.put('/api/world-time', (req, res) => {
+            try {
+                Globals.ensureWorldTimeInitialized();
+
+                const { timeMinutes, dayIndex } = req.body;
+                const current = Globals.getWorldTimeContext();
+                let newTimeMinutes = current.timeMinutes;
+                let newDayIndex = current.dayIndex;
+
+                if (timeMinutes !== undefined && timeMinutes !== null) {
+                    const parsed = Number(timeMinutes);
+                    if (!Number.isFinite(parsed) || parsed < 0) {
+                        return res.status(400).json({ success: false, error: 'timeMinutes must be a non-negative number' });
+                    }
+                    newTimeMinutes = Math.round(parsed);
+                }
+
+                if (dayIndex !== undefined && dayIndex !== null) {
+                    const parsed = Number(dayIndex);
+                    if (!Number.isFinite(parsed) || parsed < 0 || !Number.isInteger(parsed)) {
+                        return res.status(400).json({ success: false, error: 'dayIndex must be a non-negative integer' });
+                    }
+                    newDayIndex = parsed;
+                }
+
+                Globals.hydrateWorldTime({
+                    worldTime: { dayIndex: newDayIndex, timeMinutes: newTimeMinutes }
+                });
+
+                res.json({ success: true, worldTime: buildWorldTimePayload() });
+            } catch (error) {
+                console.error('Error updating world time:', error);
+                res.status(500).json({ success: false, error: error.message });
+            }
+        });
+
         // Delete a save
         app.delete('/api/save/:saveName', (req, res) => {
             try {

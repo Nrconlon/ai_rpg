@@ -716,6 +716,9 @@ class AIRPGChat {
             locationHasWeather
         };
 
+        this.worldTimeIndicator.dataset.dayIndex = worldTime.dayIndex ?? '';
+        this.worldTimeIndicator.dataset.timeMinutes = worldTime.timeMinutes ?? '';
+
         this.worldTimeIndicator.removeAttribute('hidden');
     }
 
