@@ -1154,7 +1154,6 @@ function createImageJob(jobId, payload = {}) {
         if (typeof normalizedPayload.prompt !== 'string') {
             throw new Error('Image job prompt must be a string when provided.');
         }
-        normalizedPayload.prompt = prependBaseContextPreamble(normalizedPayload.prompt);
     }
 
     const job = {
@@ -10151,8 +10150,8 @@ Globals.parseXMLTemplate = parseXMLTemplate;
 // Function to render player portrait prompt from template
 function renderPlayerPortraitPrompt(player) {
     try {
-        const templateName = getImagePromptTemplateName('character', 'player-portrait.xml.njk');
         const activeSetting = getActiveSettingSnapshot();
+        const templateName = getImagePromptTemplateName('character', 'player-portrait.xml.njk');
 
         if (!player) {
             throw new Error('Player object is required');
@@ -21215,10 +21214,9 @@ function applyImagePromptPrefix(promptText, prefixType = null) {
     }
 
     const trimmedPrefix = typeof prefix === 'string' ? prefix.trim() : '';
-    const combinedPrompt = trimmedPrefix
+    return trimmedPrefix
         ? `${trimmedPrefix}\n\n${trimmedPrompt}`
         : trimmedPrompt;
-    return prependBaseContextPreamble(combinedPrompt);
 }
 
 async function generateImagePromptFromTemplate(prompts, options = {}) {

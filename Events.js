@@ -26,7 +26,7 @@ const EVENT_PROMPT_ORDER = [
         // This dummy event gets the LLM to choose between mutually exclusive types of movement.
         {
             key: "dummy_event",
-            prompt: `Did the player or party move at all? If so, give the most appropriate answer.  It should be one of: 'moved to new region', 'moved to new location', 'moved to a new room (location)', 'moved into a large building or structure (region)', 'moved within location to somewhere fully visible', 'moved within location to somewhere not fully visible (sublocation)', 'moved to different existing location', 'sitting down or resting' or 'hiding/taking cover in this location'. If the player did not physically move, answer N/A.`,
+            prompt: `Did the player or party move at all? If so, give the most appropriate answer.  It should be one of: 'moved to new region', 'moved to new location', 'moved to a new room (location)', 'moved into a large building or structure (region)', 'moved within location to somewhere fully visible', 'moved within location to somewhere not fully visible (sublocation)', 'moved to different existing location', 'briefly moved to a nearby spot (no location change)', 'sitting down or resting' or 'hiding/taking cover in this location'. Choose 'briefly moved to a nearby spot (no location change)' when the player steps away momentarily (e.g. behind a curtain, to the other side of the room, around a corner) but stays in the same general area. Reserve 'sublocation' for when the player enters a meaningfully distinct area they will spend time in. If the player did not physically move, answer N/A.`,
         },
         {
             key: "dummy_event",
