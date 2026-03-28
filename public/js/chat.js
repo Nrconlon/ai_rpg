@@ -1,6 +1,11 @@
 class AIRPGChat {
+    static SCROLL_BOTTOM_THRESHOLD = 30;
+
     constructor() {
         this.chatLog = document.getElementById('chatLog');
+        this._userAtBottom = true;
+        this._lastScrollTop = 0;
+        this._rebuildInProgress = false;
         this.messageInput = document.getElementById('messageInput');
         this.sendButton = document.getElementById('sendButton');
         this.prefixHelpLink = document.getElementById('prefixHelpLink');
@@ -599,6 +604,7 @@ class AIRPGChat {
             const response = await fetch('/api/chat/history');
             const data = await response.json();
 
+            this._userAtBottom = true;
             this.updateServerHistory(Array.isArray(data.history) ? data.history : []);
             if (data?.worldTime && typeof data.worldTime === 'object') {
                 this.updateWorldTimeIndicator(data.worldTime, { emitTransitions: false });
@@ -1158,6 +1164,24 @@ class AIRPGChat {
             existingPromptProgress.remove();
         }
 
+        // Scroll anchor: snapshot before DOM rebuild
+        let anchorTimestamp = null;
+        let anchorOffset = 0;
+        const wasAtBottom = this._userAtBottom;
+        if (!wasAtBottom) {
+            const chatRect = this.chatLog.getBoundingClientRect();
+            const messages = this.chatLog.querySelectorAll('[data-timestamp]');
+            for (const msg of messages) {
+                const msgRect = msg.getBoundingClientRect();
+                if (msgRect.bottom > chatRect.top) {
+                    anchorTimestamp = msg.dataset.timestamp;
+                    anchorOffset = msgRect.top - chatRect.top;
+                    break;
+                }
+            }
+        }
+        this._rebuildInProgress = true;
+
         this.chatLog.innerHTML = '';
         if (fragment.childNodes.length === 0) {
             const placeholder = document.createElement('div');
@@ -1172,7 +1196,19 @@ class AIRPGChat {
             this.chatLog.appendChild(fragment);
         }
 
-        this.scrollToBottom();
+        this._rebuildInProgress = false;
+        if (!wasAtBottom && anchorTimestamp) {
+            const anchorEl = this.chatLog.querySelector(`[data-timestamp="${anchorTimestamp}"]`);
+            if (anchorEl) {
+                const chatRect = this.chatLog.getBoundingClientRect();
+                const newRect = anchorEl.getBoundingClientRect();
+                this.chatLog.scrollTop += (newRect.top - chatRect.top) - anchorOffset;
+            } else {
+                this.scrollToBottom(true);
+            }
+        } else {
+            this.scrollToBottom(true);
+        }
     }
 
     createChatMessageElement(entry, attachments = []) {
@@ -1751,23 +1787,6 @@ class AIRPGChat {
             this.handleDeleteMessage(entry);
         });
 
-        const copyButton = document.createElement('button');
-        copyButton.type = 'button';
-        copyButton.className = 'message-action message-action--copy';
-        copyButton.title = 'Copy message';
-        copyButton.setAttribute('aria-label', 'Copy message');
-        copyButton.textContent = '📋';
-        copyButton.addEventListener('click', async () => {
-            try {
-                await navigator.clipboard.writeText(entry.content || '');
-                copyButton.textContent = '✅';
-                setTimeout(() => { copyButton.textContent = '📋'; }, 1500);
-            } catch (err) {
-                console.error('Copy failed:', err);
-            }
-        });
-
-        wrapper.appendChild(copyButton);
         wrapper.appendChild(editButton);
         wrapper.appendChild(deleteButton);
         return wrapper;
@@ -3285,6 +3304,21 @@ class AIRPGChat {
                 inventoryButton.click();
             }
         });
+
+        this.chatLog.addEventListener('scroll', () => {
+            if (this._rebuildInProgress) return;
+            const dist = this.chatLog.scrollHeight - this.chatLog.clientHeight - this.chatLog.scrollTop;
+            if (dist <= AIRPGChat.SCROLL_BOTTOM_THRESHOLD) {
+                this._userAtBottom = true;
+            } else if (this.chatLog.scrollTop < this._lastScrollTop) {
+                this._userAtBottom = false;
+            }
+            this._lastScrollTop = this.chatLog.scrollTop;
+        });
+
+        this.chatLog.addEventListener('wheel', (e) => {
+            if (e.deltaY < 0) this._userAtBottom = false;
+        }, { passive: true });
     }
 
     addMessage(sender, content, isError = false, debugInfo = null, options = {}) {
@@ -5556,7 +5590,8 @@ class AIRPGChat {
         }
     }
 
-    scrollToBottom() {
+    scrollToBottom(force = false) {
+        if (!force && !this._userAtBottom) return;
         this.chatLog.scrollTop = this.chatLog.scrollHeight;
     }
 
@@ -6092,6 +6127,7 @@ class AIRPGChat {
                 ? trimmedVisibleContent.slice(genericMarkerLength).replace(/^\s+/, '')
                 : content);
 
+        this._userAtBottom = true;
         if (isNoLogGenericPromptEntry) {
             this.addMessage('user', normalizedUserContent, false);
         } else {

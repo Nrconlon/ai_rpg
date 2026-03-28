@@ -14852,6 +14852,113 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        // Refresh an NPC's description via LLM based on current state and narrative history
+        app.post('/api/npcs/:id/refresh-description', async (req, res) => {
+            try {
+                const npcId = req.params.id;
+                if (!npcId || typeof npcId !== 'string') {
+                    return res.status(400).json({ success: false, error: 'Character ID is required' });
+                }
+
+                const npc = players.get(npcId);
+                if (!npc) {
+                    return res.status(404).json({ success: false, error: `Character with ID '${npcId}' not found` });
+                }
+
+                if (npc.id === currentPlayer?.id) {
+                    return res.status(400).json({ success: false, error: 'Cannot refresh description for the player character' });
+                }
+
+                const baseContext = await prepareBasePromptContext({});
+
+                const targetNpc = {
+                    name: npc.name,
+                    description: npc.description || '',
+                    shortDescription: npc.shortDescription || '',
+                    race: npc.race,
+                    class: npc.class,
+                    level: npc.level,
+                    health: npc.health,
+                    maxHealth: npc.maxHealth,
+                    personality: npc.personality || {},
+                    attributes: npc.attributes,
+                    statusEffects: npc.statusEffects || [],
+                    abilities: npc.abilities || [],
+                    inventory: typeof npc.getInventory === 'function' ? npc.getInventory() : (npc.inventory || []),
+                    needBars: npc.needBars || [],
+                    importantMemories: npc.importantMemories || npc.memories || [],
+                };
+
+                const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+                    ...baseContext,
+                    promptType: 'npc-description-refresh',
+                    targetNpc,
+                    chatHistory,
+                });
+
+                const promptData = parseXMLTemplate(renderedTemplate);
+                if (!promptData?.systemPrompt || !promptData?.generationPrompt) {
+                    return res.status(500).json({ success: false, error: 'Failed to build description refresh prompt' });
+                }
+
+                const messages = [
+                    { role: 'system', content: promptData.systemPrompt },
+                    { role: 'user', content: promptData.generationPrompt },
+                ];
+
+                const requestOptions = {
+                    messages,
+                    metadataLabel: 'npc_description_refresh',
+                    requiredRegex: /<npcDescription\b[\s\S]*?<\/npcDescription>/i,
+                };
+
+                if (typeof promptData.temperature === 'number') {
+                    requestOptions.temperature = promptData.temperature;
+                } else {
+                    const configTemperature = Number(config.ai.temperature);
+                    if (Number.isFinite(configTemperature)) {
+                        requestOptions.temperature = configTemperature;
+                    }
+                }
+
+                const aiContent = await LLMClient.chatCompletion(requestOptions);
+                if (!aiContent || !aiContent.trim()) {
+                    return res.status(500).json({ success: false, error: 'AI returned an empty response' });
+                }
+
+                const safeName = (npc.name || 'npc')
+                    .toLowerCase()
+                    .replace(/[^a-z0-9]+/g, '_')
+                    .replace(/^_+|_+$/g, '') || 'npc';
+                LLMClient.logPrompt({
+                    prefix: `npc_description_refresh_${safeName}`,
+                    metadataLabel: 'npc_description_refresh',
+                    systemPrompt: promptData.systemPrompt,
+                    generationPrompt: promptData.generationPrompt,
+                    response: aiContent.trim(),
+                });
+
+                const descMatch = aiContent.match(/<description>([\s\S]*?)<\/description>/i);
+                const shortDescMatch = aiContent.match(/<shortDescription>([\s\S]*?)<\/shortDescription>/i);
+
+                const description = descMatch ? descMatch[1].trim() : null;
+                const shortDescription = shortDescMatch ? shortDescMatch[1].trim() : null;
+
+                if (!description) {
+                    return res.status(500).json({ success: false, error: 'Failed to parse description from AI response' });
+                }
+
+                return res.json({
+                    success: true,
+                    description,
+                    shortDescription: shortDescription || '',
+                });
+            } catch (error) {
+                console.warn('Failed to refresh NPC description:', error?.message || error);
+                return res.status(500).json({ success: false, error: error?.message || 'Failed to refresh description' });
+            }
+        });
+
         // Update an NPC's core data (experimental editing UI)
         app.put('/api/npcs/:id', async (req, res) => {
             try {

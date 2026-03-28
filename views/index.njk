@@ -1369,7 +1369,10 @@
                 </div>
 
                 <div class="npc-edit-section">
-                    <label for="npcEditDescription">Description</label>
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <label for="npcEditDescription">Description</label>
+                        <button type="button" class="btn btn-secondary" id="npcRefreshDescriptionBtn" style="font-size: 0.8em; padding: 2px 8px;">Refresh Description</button>
+                    </div>
                     <textarea id="npcEditDescription" rows="4"></textarea>
                 </div>
 
@@ -6275,6 +6278,7 @@
         const npcEditCurrencyInput = document.getElementById('npcEditCurrency');
         const npcEditExperienceInput = document.getElementById('npcEditExperience');
         const npcEditDescriptionInput = document.getElementById('npcEditDescription');
+        const npcRefreshDescriptionBtn = document.getElementById('npcRefreshDescriptionBtn');
         const npcEditAliasesInput = document.getElementById('npcEditAliases');
         const npcEditResistancesInput = document.getElementById('npcEditResistances');
         const npcEditVulnerabilitiesInput = document.getElementById('npcEditVulnerabilities');
@@ -11746,6 +11750,44 @@
         if (npcEditCloseBtn) {
             npcEditCloseBtn.addEventListener('click', () => {
                 closeNpcEditModal();
+            });
+        }
+
+        if (npcRefreshDescriptionBtn) {
+            npcRefreshDescriptionBtn.addEventListener('click', async () => {
+                const npcId = npcEditIdInput?.value;
+                if (!npcId) return;
+                try {
+                    npcRefreshDescriptionBtn.disabled = true;
+                    npcRefreshDescriptionBtn.textContent = 'Refreshing…';
+                    const response = await fetch(`/api/npcs/${encodeURIComponent(npcId)}/refresh-description`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                    });
+                    const data = await response.json();
+                    if (!data.success) {
+                        throw new Error(data.error || 'Failed to refresh description');
+                    }
+                    if (npcEditDescriptionInput && data.description) {
+                        npcEditDescriptionInput.value = data.description;
+                    }
+                    if (npcEditShortDescriptionInput && data.shortDescription) {
+                        npcEditShortDescriptionInput.value = data.shortDescription;
+                    }
+                    if (npcEditStatus) {
+                        npcEditStatus.textContent = 'Description refreshed — review and Save to keep.';
+                        npcEditStatus.style.color = '';
+                    }
+                } catch (error) {
+                    console.error('Failed to refresh NPC description:', error);
+                    if (npcEditStatus) {
+                        npcEditStatus.textContent = `Refresh failed: ${error.message || error}`;
+                        npcEditStatus.style.color = 'red';
+                    }
+                } finally {
+                    npcRefreshDescriptionBtn.disabled = false;
+                    npcRefreshDescriptionBtn.textContent = 'Refresh Description';
+                }
             });
         }
 

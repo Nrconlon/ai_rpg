@@ -1,0 +1,150 @@
+<targetNpc>
+  <name>{{ targetNpc.name }}</name>
+  <race>{{ targetNpc.race | default('Unknown') }}</race>
+  <class>{{ targetNpc.class | default('Unknown') }}</class>
+  <level>{{ targetNpc.level | default(1) }}</level>
+  <currentDescription>{{ targetNpc.description }}</currentDescription>
+  <currentShortDescription>{{ targetNpc.shortDescription | default('') }}</currentShortDescription>
+  <personality>
+    <type>{{ targetNpc.personality.type | default('Unknown', true) }}</type>
+    <traits>{{ targetNpc.personality.traits | default('None', true) }}</traits>
+    <goals>
+      {%- if targetNpc.personality.goals -%}
+        {% for goal in targetNpc.personality.goals %}
+        <goal>{{ goal }}</goal>
+        {% endfor %}
+      {%- endif -%}
+    </goals>
+    <notes>{{ targetNpc.personality.notes | default('', true) }}</notes>
+  </personality>
+  <health>{{ targetNpc.health | default('unknown') }}</health>
+  <maxHealth>{{ targetNpc.maxHealth | default('unknown') }}</maxHealth>
+  {% if targetNpc.attributes %}
+  <attributes>
+    {% for key, value in targetNpc.attributes %}
+    {% set attrName = value.name or key %}
+    {% set attrValue = value.value or value.score or value.rating or value %}
+    {% if attrName %}
+    <attribute>
+      <name>{{ attrName }}</name>
+      <value>{{ attrValue }}</value>
+    </attribute>
+    {% endif %}
+    {% endfor %}
+  </attributes>
+  {% endif %}
+  {% if targetNpc.statusEffects and targetNpc.statusEffects.length %}
+  <statusEffects>
+    {% for effect in targetNpc.statusEffects %}
+    <effect>
+      <description>{{ effect.description or effect }}</description>
+      <duration>{{ effect.duration | default('unknown') }}</duration>
+    </effect>
+    {% endfor %}
+  </statusEffects>
+  {% endif %}
+  {% if targetNpc.abilities and targetNpc.abilities.length %}
+  <abilities>
+    {% for ability in targetNpc.abilities %}
+    <ability>
+      <name>{{ ability.name }}</name>
+      <description>{{ ability.description }}</description>
+      <type>{{ ability.type }}</type>
+      <level>{{ ability.level }}</level>
+    </ability>
+    {% endfor %}
+  </abilities>
+  {% endif %}
+  {% if targetNpc.inventory and targetNpc.inventory.length %}
+  <inventory>
+    {% for item in targetNpc.inventory %}
+    <item>{{ item.name or item }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}</item>
+    {% endfor %}
+  </inventory>
+  {% endif %}
+  {% if targetNpc.needBars and targetNpc.needBars.length %}
+  <needBars>
+    {% for bar in targetNpc.needBars %}
+    <needBar>
+      <name>{{ bar.name }}</name>
+      <currentThreshold>{% if bar.currentThreshold %}{{ bar.currentThreshold.name | default('Neutral') }}{% else %}Neutral{% endif %}</currentThreshold>
+    </needBar>
+    {% endfor %}
+  </needBars>
+  {% endif %}
+  {% if targetNpc.importantMemories and targetNpc.importantMemories.length %}
+  <memories>
+    {% for memory in targetNpc.importantMemories %}
+    <memory>{{ memory }}</memory>
+    {% endfor %}
+  </memories>
+  {% endif %}
+</targetNpc>
+
+<recentNpcHistory>
+  {%- if chatHistory is defined and chatHistory is iterable and not (chatHistory is string) -%}
+    {%- set npcNameValue = targetNpc.name | default('') | trim -%}
+    {%- if npcNameValue -%}
+      {%- set normalizedNpcName = npcNameValue | lower -%}
+      {%- set maxEntries = 15 -%}
+      {%- set entriesFound = 0 -%}
+      {%- for entry in chatHistory | reverse -%}
+        {%- if entriesFound < maxEntries -%}
+          {%- if entry -%}
+            {%- set metadata = entry.metadata if entry.metadata is defined else null -%}
+            {%- set npcNamesList = metadata.npcNames if metadata and metadata.npcNames is defined else [] -%}
+            {%- if npcNamesList -%}
+              {%- set npcFound = false -%}
+              {%- for npcName in npcNamesList -%}
+                {%- if not npcFound and npcName -%}
+                  {%- set normalizedSeen = npcName | trim | lower -%}
+                  {%- if normalizedSeen == normalizedNpcName -%}
+                    {%- set npcFound = true -%}
+                  {%- endif -%}
+                {%- endif -%}
+              {%- endfor -%}
+              {%- if npcFound -%}
+                {%- set rawText = '' -%}
+                {%- if entry.content is defined and entry.content -%}
+                  {%- set rawText = entry.content -%}
+                {%- elif entry.summary is defined and entry.summary -%}
+                  {%- set rawText = entry.summary -%}
+                {%- endif -%}
+                {%- set trimmedText = rawText | trim -%}
+                {%- if trimmedText -%}
+                  {%- set roleValue = entry.role if entry.role is defined and entry.role else 'system' -%}
+                  <historyEntry>
+                    <role>{{ roleValue | trim }}</role>
+                    <text>{{ trimmedText | e('xml') }}</text>
+                  </historyEntry>
+                  {%- set entriesFound = entriesFound + 1 -%}
+                {%- endif -%}
+              {%- endif -%}
+            {%- endif -%}
+          {%- endif -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {%- if entriesFound == 0 -%}
+        <info>No recent history entries involving {{ npcNameValue }}.</info>
+      {%- endif -%}
+    {%- endif -%}
+  {%- else -%}
+    <info>Chat history not available.</info>
+  {%- endif -%}
+</recentNpcHistory>
+
+<task>Update this NPC's description and short description to reflect their current situation in the story.</task>
+
+Guidelines:
+- Focus on who this character IS — their personality, goals, motivations, and role in the world. These matter most.
+- Only mention physical details if they are story-relevant (e.g. a fresh battle scar, a cursed transformation) — do not fixate on trivial appearance details.
+- Capture psychological shifts (trauma, growth, changed loyalties) and evolving goals based on their memories and recent history.
+- Avoid describing momentary actions or transient states (e.g. "currently tending the bar", "standing guard at the gate"). These become false quickly. Describe enduring traits and circumstances instead.
+- The description should be 2-4 sentences. The short description should be 10 words or fewer.
+- Do not include the NPC's name at the start of the description.
+
+Return your response in this exact format:
+<npcDescription>
+  <description>[2-4 sentences capturing current appearance, demeanor, and goals]</description>
+  <shortDescription>[10 words or fewer summarizing the character]</shortDescription>
+</npcDescription>
