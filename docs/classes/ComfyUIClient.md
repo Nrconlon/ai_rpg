@@ -18,4 +18,12 @@ Client for a ComfyUI server. Queues workflows, polls status, downloads images, a
 
 ## Notes
 - `queuePrompt` and `getHistory` catch and return errors instead of throwing.
+- `queuePrompt` error detail fallback chain: `error.response.data` → `error.message` → `error.code` (e.g. `ECONNREFUSED`) with URL → generic message. This ensures useful diagnostics on Windows where connection errors can have blank `error.message`.
 - `saveImage` ensures output directory exists.
+
+## Debugging
+Run `node scripts/test_comfyui.js` (or `node scripts/test_comfyui.js 8000` to test a specific port) to:
+1. Probe connectivity to ComfyUI on both the configured port and fallback port 8000
+2. Check available checkpoints and custom nodes
+3. Render the workflow template with sample data and validate JSON output
+4. Submit the rendered workflow to ComfyUI with full error reporting

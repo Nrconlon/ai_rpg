@@ -26,7 +26,7 @@ class ReloadConfigCommand extends SlashCommandBase {
 
     let result;
     try {
-      result = reloadFn();
+      result = await reloadFn();
     } catch (error) {
       await interaction.reply({
         content: `Reload failed: ${error.message}`,

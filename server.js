@@ -571,7 +571,11 @@ try {
     process.exit(1);
 }
 
-function reloadConfigAndDefs() {
+async function reloadConfigAndDefs() {
+    const oldImagegenHost = config?.imagegen?.server?.host;
+    const oldImagegenPort = config?.imagegen?.server?.port;
+    const oldImagegenEngine = config?.imagegen?.engine;
+
     const merged = loadMergedConfig(cliConfigOverridePath);
 
     if (config && typeof config === 'object') {
@@ -601,6 +605,16 @@ function reloadConfigAndDefs() {
     invalidateCache(viewsEnv);
     invalidateCache(promptEnv);
     invalidateCache(imagePromptEnv);
+
+    // Re-initialize the image engine only if connection details changed
+    const newImagegenHost = config?.imagegen?.server?.host;
+    const newImagegenPort = config?.imagegen?.server?.port;
+    const newImagegenEngine = config?.imagegen?.engine;
+    if (newImagegenHost !== oldImagegenHost ||
+        newImagegenPort !== oldImagegenPort ||
+        newImagegenEngine !== oldImagegenEngine) {
+        await initializeImageEngine();
+    }
 
     return {
         success: true,
@@ -6672,6 +6686,19 @@ function classifyOutcomeMargin(margin, dieRoll = null, difficultyLabel = null) {
     return outcome;
 }
 
+function getSimpleRollLabel(dieRoll) {
+    if (!Number.isFinite(dieRoll)) {
+        return '';
+    }
+    if (dieRoll <= 3) {
+        return 'This situation is very challenging';
+    }
+    if (dieRoll >= 17) {
+        return 'The odds are in their favor';
+    }
+    return '';
+}
+
 function findAttributeKey(player, attributeName) {
     if (!player || typeof player.getAttributeNames !== 'function' || !attributeName) {
         return null;
@@ -6970,12 +6997,13 @@ function resolveActionOutcome({ plausibility, player, dieRollOverride = null }) 
 
         const margin = total - opponentTotal;
         const outcome = classifyOutcomeMargin(margin, dieRoll, null);
+        const resolvedLabel = Globals.config?.plausibility_checks?.simple_rolls ? getSimpleRollLabel(dieRoll) : outcome.label;
         const opponentDisplayName = opponentActor?.name || opponentName || 'Opponent';
 
-        console.log(`🎲 Opposed skill check result: ${player?.name || 'Actor'} d20(${dieRoll}) + skill(${skillValue}) + attribute(${attributeBonus}) + circumstances(${circumstanceModifier}) = ${total} vs ${opponentDisplayName} d20(${opponentDieRoll}) + skill(${opponentSkillValue}) + attribute(${opponentAttributeBonus}) = ${opponentTotal}. Outcome: ${outcome.label}`);
+        console.log(`🎲 Opposed skill check result: ${player?.name || 'Actor'} d20(${dieRoll}) + skill(${skillValue}) + attribute(${attributeBonus}) + circumstances(${circumstanceModifier}) = ${total} vs ${opponentDisplayName} d20(${opponentDieRoll}) + skill(${opponentSkillValue}) + attribute(${opponentAttributeBonus}) = ${opponentTotal}. Outcome: ${outcome.label}${resolvedLabel !== outcome.label ? ` (simple roll: "${resolvedLabel}")` : ''}`);
 
         return {
-            label: outcome.label,
+            label: resolvedLabel,
             degree: outcome.degree,
             success: outcome.success,
             type,
@@ -7043,11 +7071,12 @@ function resolveActionOutcome({ plausibility, player, dieRollOverride = null }) 
     const total = dieRoll + skillValue + attributeBonus + circumstanceModifier;
     const margin = total - dc;
     const outcome = classifyOutcomeMargin(margin, dieRoll, resolvedDifficulty);
+    const resolvedLabel = Globals.config?.plausibility_checks?.simple_rolls ? getSimpleRollLabel(dieRoll) : outcome.label;
 
-    console.log(`🎲 Skill check result: d20(${dieRoll}) + skill(${skillValue}) + attribute(${attributeBonus}) + circumstances(${circumstanceModifier}) = ${total} vs DC ${dc} (${resolvedDifficulty || 'Unknown'}). Outcome: ${outcome.label}`);
+    console.log(`🎲 Skill check result: d20(${dieRoll}) + skill(${skillValue}) + attribute(${attributeBonus}) + circumstances(${circumstanceModifier}) = ${total} vs DC ${dc} (${resolvedDifficulty || 'Unknown'}). Outcome: ${outcome.label}${resolvedLabel !== outcome.label ? ` (simple roll: "${resolvedLabel}")` : ''}`);
 
     return {
-        label: outcome.label,
+        label: resolvedLabel,
         degree: outcome.degree,
         success: outcome.success,
         type: type,

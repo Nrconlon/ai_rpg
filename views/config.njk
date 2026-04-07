@@ -483,6 +483,15 @@
                         </div>
 
                         <div class="form-group">
+                            <label for="simple-rolls-enabled">Simple Skill Rolls:</label>
+                            <div class="checkbox-wrapper">
+                                <input type="hidden" name="plausibility_checks.simple_rolls::boolean" value="false">
+                                <input type="checkbox" id="simple-rolls-enabled" name="plausibility_checks.simple_rolls::boolean" value="true" {% if config.plausibility_checks.simple_rolls %}checked{% endif %}>
+                            </div>
+                            <span class="help-text">Use light LLM guidance from d20 rolls instead of strict success/failure outcomes</span>
+                        </div>
+
+                        <div class="form-group">
                             <label for="quest-completion-prose-enabled">Quest Completion Prose:</label>
                             <div class="checkbox-wrapper">
                                 <input type="hidden" name="quest_completion_prose.enabled::boolean" value="false">

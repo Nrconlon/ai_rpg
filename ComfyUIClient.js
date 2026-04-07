@@ -56,9 +56,18 @@ class ComfyUIClient {
       };
 
     } catch (error) {
-      const detail = error.response?.data
-        ? (typeof error.response.data === 'string' ? error.response.data : JSON.stringify(error.response.data))
-        : error.message;
+      let detail;
+      if (error.response?.data) {
+        detail = typeof error.response.data === 'string'
+          ? error.response.data
+          : JSON.stringify(error.response.data);
+      } else if (error.message) {
+        detail = error.message;
+      } else if (error.code) {
+        detail = `Connection error: ${error.code} (${this.baseURL})`;
+      } else {
+        detail = `Unknown error connecting to ${this.baseURL}`;
+      }
       console.error(`❌ Failed to queue ComfyUI prompt ${id}:`, detail);
       return {
         success: false,

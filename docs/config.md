@@ -339,3 +339,24 @@ plot_expander_prompt_frequency: 10
 - Value must be an integer `>= 0`; invalid values raise runtime errors when scheduling.
 - Runs use the base-context `plot-expander` include and store hidden `plot-expander` entries.
 - The latest `plot-expander` output is injected into base-context as `<plotExpander>` immediately after `<plotSummary>`.
+
+## Plausibility and skill checks
+
+`plausibility_checks` controls whether the game runs plausibility/skill checks and how outcomes are communicated to the LLM.
+
+```yaml
+plausibility_checks:
+  enabled: true
+  simple_rolls: false
+```
+
+- `enabled: false` disables plausibility and combat checks entirely. Everything is trivially plausible and the combat system doesn't activate. Damage may still occur from event checks.
+- `simple_rolls: true` remaps the outcome label sent to the LLM to light, non-committal guidance based on the raw d20 roll instead of the strict success/failure classification. The full dice math, margin, and degree still run normally for display and logging — only the LLM-facing label changes:
+
+  | d20 Roll | LLM label |
+  |----------|-----------|
+  | 1–3      | "This situation is very challenging" |
+  | 4–16     | *(empty — no guidance, LLM decides)* |
+  | 17–20    | "The odds are in their favor" |
+
+  The internal `degree` and `success` fields are preserved from the original classification. Console logs show both the original outcome and the remapped label when simple rolls is active.
