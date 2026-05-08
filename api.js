@@ -1184,7 +1184,9 @@ module.exports = function registerApiRoutes(scope) {
             return `<root>${input}</root>`
                 .replace(/&(?![#a-zA-Z0-9]+;)/g, '&amp;')
                 .replace(/<\s*br\s*>/gi, '<br/>')
-                .replace(/<\s*hr\s*>/gi, '<hr/>');
+                .replace(/<\s*hr\s*>/gi, '<hr/>')
+                .replace(/<<(\w)/g, '<$1')
+                .replace(/<\/<(\w)/g, '</$1');
         }
 
         const playerActionProseRegex = /<finalProse>[\s\S]*\S[\s\S]*<\/finalProse>|<travelProse>[\s\S]*\S[\s\S]*<\/travelProse>/i;
